@@ -279,7 +279,7 @@ function tab(inn) {
 $("#bIn").onclick = async () => {
   say($("#aMsg"), "Ingresando…", true);
   const { error } = await db.auth.signInWithPassword({ email: $("#lCorreo").value.trim(), password: $("#lClave").value });
-  if (error) say($("#aMsg"), "Correo o contraseña incorrectos.", false); else $("#aMsg").textContent = "";
+  if (error) { console.error(error); say($("#aMsg"), /confirm/i.test(error.message) ? "Falta confirmar el correo. Revisa tu bandeja o pide a la OGE que confirme la cuenta." : /invalid login/i.test(error.message) ? "Correo o contraseña incorrectos." : "No se pudo ingresar: " + error.message, false); } else $("#aMsg").textContent = "";
 };
 $("#bUp").onclick = async () => {
   const m = $("#aMsg"), n = $("#cNombre").value.trim(), c = $("#cCoord").value.trim(), e = $("#cCorreo").value.trim(), p = $("#cClave").value;
