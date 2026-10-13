@@ -1,0 +1,17 @@
+name: keepalive-supabase
+
+on:
+  schedule:
+    - cron: "0 14 * * 1,4"   # lunes y jueves
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar horarios (mantiene activo el proyecto)
+        run: |
+          curl -sf -X POST "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/agenda" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"p_desde":"2030-01-01T00:00:00Z","p_hasta":"2030-01-02T00:00:00Z"}'
