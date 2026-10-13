@@ -222,7 +222,7 @@ footer img{height:56px}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
 <script>
 // ====== CONFIGURA AQUÍ ======
-const SUPABASE_URL = "https://TU-PROYECTO.supabase.co";
+const SUPABASE_URL = "https://fazarpgzqjqkctwgooxi.supabase.co";
 const SUPABASE_KEY = "sb_publishable_M2uPFzhgiaC0-WirrBDPSA_Mnd0XrJ1";
 // ============================
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -288,7 +288,7 @@ $("#bUp").onclick = async () => {
   if (!$("#cAcepta").checked) return say(m, "Debes autorizar el tratamiento de datos.", false);
   say(m, "Creando cuenta…", true);
   const { data, error } = await db.auth.signUp({ email: e, password: p, options: { data: { nombre: n, coordinador: c, telefono: $("#cTel").value.trim() } } });
-  if (error) return say(m, /registered/i.test(error.message) ? "Ese correo ya tiene cuenta." : "No se pudo crear la cuenta. Puede que el nombre del grupo ya exista.", false);
+  if (error) { console.error(error); return say(m, /registered/i.test(error.message) ? "Ese correo ya tiene cuenta." : "No se pudo crear la cuenta: " + error.message, false); }
   say(m, data.session ? "Cuenta creada. La OGE debe aprobar tu grupo antes de publicar o reservar." : "Cuenta creada. Revisa tu correo para confirmarla.", true);
 };
 $("#bSalir").onclick = async () => { await db.auth.signOut(); location.hash = "#pizarron"; };
