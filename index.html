@@ -370,7 +370,7 @@ $("#bUp").onclick = async () => {
   say(m, "Creando cuenta…", true);
   const { data, error } = await db.auth.signUp({ email: e, password: p, options: { data: { nombre: n, coordinador: c, telefono: $("#cTel").value.trim() } } });
   if (error) { console.error(error); return say(m, /registered/i.test(error.message) ? "Ese correo ya tiene cuenta." : "No se pudo crear la cuenta: " + error.message, false); }
-  say(m, data.session ? "Cuenta creada. La OGE debe aprobar tu grupo antes de publicar o reservar." : "Cuenta creada. Revisa tu correo para confirmarla.", true);
+  say(m, data.session ? "Tu correo se registró correctamente. La OGE debe aprobar tu grupo antes de que puedas publicar o reservar." : "Tu correo se registró correctamente. Te enviamos un mensaje: ábrelo y pulsa el botón para confirmar tu cuenta.", true);
 };
 $("#bSalir").onclick = async () => { await db.auth.signOut(); location.hash = "#pizarron"; };
 
