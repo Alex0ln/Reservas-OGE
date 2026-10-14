@@ -215,7 +215,6 @@ footer img{height:56px}
         <button class="btn az" id="bUp" style="margin-top:16px;width:100%">Crear cuenta del grupo</button>
       </div>
       <div class="msg" id="aMsg" role="status"></div>
-      <button class="btn l" id="soyAdmin" type="button" style="width:100%;margin-top:8px">Soy la dirección de la OGE</button>
     </div>
   </div>
 
@@ -226,6 +225,7 @@ footer img{height:56px}
     </div>
     <div class="card"><h3>Perfil del grupo</h3>
       <p class="sub" style="margin:0 0 8px">Así te verán los demás en la pestaña Grupos.</p>
+      <label for="fCoord">Nombre del coordinador principal</label><input type="text" id="fCoord" maxlength="100" autocomplete="name">
       <label for="fDesc">Descripción del grupo</label><textarea id="fDesc" maxlength="500"></textarea>
       <label for="fRedes">Redes o contacto público (ej. @migrupo en Instagram)</label><input type="text" id="fRedes" maxlength="120">
       <label for="fLogo">Logo del grupo (imagen, máximo 5 MB)</label>
@@ -341,7 +341,7 @@ async function sesion() {
     $("#gEstado").textContent = !grupo ? "No encontramos los datos del grupo." : grupo.aprobado
       ? "Cuenta aprobada por la OGE. Ya puedes publicar y reservar." : "Cuenta pendiente: la OGE debe aprobar tu grupo antes de publicar o reservar.";
     cargarMisPubs();
-    if (grupo && perfilId !== user.id) { $("#fDesc").value = grupo.descripcion || ""; $("#fRedes").value = grupo.redes || ""; perfilId = user.id; prevLogo(); }
+    if (grupo && perfilId !== user.id) { $("#fCoord").value = grupo.coordinador || ""; $("#fDesc").value = grupo.descripcion || ""; $("#fRedes").value = grupo.redes || ""; perfilId = user.id; prevLogo(); }
   }
   const ok = !!(grupo && grupo.aprobado), av = $("#resAviso");
   $("#resForm").hidden = !ok; av.hidden = ok;
@@ -556,10 +556,6 @@ $("#chatE").onclick = async () => {
   $("#chatT").value = ""; $("#chatM").textContent = ""; delete $("#chatL").dataset.ok; cargarMsgs(); cargarSalas();
 };
 $("#chatT").addEventListener("keydown", e => { if (e.key === "Enter") $("#chatE").click(); });
-$("#soyAdmin").onclick = () => {
-  tab(false); $("#cNombre").value = "Dirección OGE"; $("#cCoord").value = "Dirección de la OGE"; $("#cCorreo").value = "agarzon@uao.edu.co"; $("#cClave").focus();
-  say($("#aMsg"), "Elige una contraseña que solo tú conozcas y pulsa Crear cuenta del grupo. Solo este correo recibe el rol de administrador.", true);
-};
 
 /* vista previa del archivo del pizarrón */
 $("#pArchivo").onchange = () => {
@@ -585,7 +581,8 @@ $("#fLogo").onchange = () => {
   $("#fMsg").textContent = ""; logoNuevo = f; logoQuitar = false; prevLogo();
 };
 $("#fGuardar").onclick = async () => {
-  const m = $("#fMsg"); let logo = logoQuitar ? null : (grupo.logo_url || null);
+  const m = $("#fMsg"); if ($("#fCoord").value.trim().length < 2) return say(m, "Escribe el nombre del coordinador principal.", false);
+  let logo = logoQuitar ? null : (grupo.logo_url || null);
   if (logoNuevo) {
     say(m, "Subiendo logo…", true);
     const ext = {"image/jpeg":"jpg","image/png":"png","image/gif":"gif","image/webp":"webp"}[logoNuevo.type], ruta = `${user.id}/logo-${Date.now()}.${ext}`;
@@ -593,7 +590,7 @@ $("#fGuardar").onclick = async () => {
     if (up.error) return say(m, "No se pudo subir el logo: " + up.error.message, false);
     logo = db.storage.from("medios").getPublicUrl(ruta).data.publicUrl;
   }
-  const { error } = await db.rpc("guardar_perfil", { p_descripcion: $("#fDesc").value, p_redes: $("#fRedes").value, p_logo: logo });
+  const { error } = await db.rpc("guardar_perfil", { p_descripcion: $("#fDesc").value, p_redes: $("#fRedes").value, p_logo: logo, p_coordinador: $("#fCoord").value });
   if (error) return say(m, "No se pudo guardar el perfil. Verifica que tu grupo esté aprobado.", false);
   const viejo = grupo.logo_url;
   if (viejo && viejo !== logo && viejo.includes("/medios/")) await db.storage.from("medios").remove([decodeURIComponent(viejo.split("/medios/")[1])]);
@@ -605,7 +602,8 @@ async function cargarGrupos() {
   const { data, error } = await db.rpc("perfiles");
   $("#gGrid").innerHTML = error ? "<p>No se pudieron cargar los grupos.</p>" : (data || []).map(g => `<article class="card" style="margin:0">
     <div style="display:flex;gap:12px;align-items:center">${g.logo_url ? `<img class="logo-g" loading="lazy" src="${esc(g.logo_url)}" alt="Logo de ${esc(g.nombre)}">` : `<div class="logo-g ini" aria-hidden="true">${esc(g.nombre.charAt(0).toUpperCase())}</div>`}<h3 style="margin:0">${esc(g.nombre)}</h3></div>
-    <p style="margin:12px 0 0;white-space:pre-line;overflow-wrap:anywhere">${esc(g.descripcion || "Este grupo aún no ha escrito su descripción.")}</p>
+    <p class="meta" style="margin:10px 0 0;padding:0">Coordinador: ${esc(g.coordinador)}</p>
+    <p style="margin:8px 0 0;white-space:pre-line;overflow-wrap:anywhere">${esc(g.descripcion || "Este grupo aún no ha escrito su descripción.")}</p>
     ${g.redes ? `<p class="meta">${esc(g.redes)}</p>` : ""}
     ${grupo && grupo.aprobado && g.id !== user.id ? `<button class="btn l" style="margin-top:12px" data-esc="${esc(g.id)}" data-nom="${esc(g.nombre)}">Escribir al grupo</button>` : ""}</article>`).join("") || "<p>Aún no hay grupos aprobados.</p>";
   $$("[data-esc]").forEach(b => b.onclick = async () => {
