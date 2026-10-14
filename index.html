@@ -110,6 +110,9 @@ footer img{height:56px}
 .nota img{max-height:340px;object-fit:contain;background:#eef2fb}
 .ahora{font-weight:700;color:var(--azul)}
 .m{max-width:82%;padding:8px 12px;border-radius:12px;background:#eef2fb;overflow-wrap:anywhere}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px}
+.logo-g{width:64px;height:64px;border-radius:14px;object-fit:cover;background:#e3e9f7;flex:none}
+.ini{display:flex;align-items:center;justify-content:center;background:var(--azul);color:#fff;font:800 1.6rem var(--display)}
 .chatg{display:grid;grid-template-columns:.85fr 1.15fr;gap:20px;align-items:start}
 @media (max-width:820px){.chatg{grid-template-columns:1fr}}
 .m.yo{align-self:flex-end;background:var(--azul);color:#fff}
@@ -123,6 +126,7 @@ footer img{height:56px}
   <nav aria-label="Principal">
     <a href="#pizarron" data-v="pizarron">Pizarrón</a>
     <a href="#reservar" data-v="reservar">Reservar espacio</a>
+    <a href="#grupos" data-v="grupos">Grupos</a>
     <a href="#chat" data-v="chat" id="navChat" hidden>Chat</a>
     <a href="#admin" data-v="admin" id="navAdmin" hidden>Administración</a>
     <a href="#grupo" data-v="grupo" id="navGrupo">Ingresar</a>
@@ -220,6 +224,15 @@ footer img{height:56px}
       <div><h2 id="gNombre"></h2><p class="sub" id="gEstado"></p></div>
       <button class="btn l" id="bSalir">Cerrar sesión</button>
     </div>
+    <div class="card"><h3>Perfil del grupo</h3>
+      <p class="sub" style="margin:0 0 8px">Así te verán los demás en la pestaña Grupos.</p>
+      <label for="fDesc">Descripción del grupo</label><textarea id="fDesc" maxlength="500"></textarea>
+      <label for="fRedes">Redes o contacto público (ej. @migrupo en Instagram)</label><input type="text" id="fRedes" maxlength="120">
+      <label for="fLogo">Logo del grupo (imagen, máximo 5 MB)</label>
+      <input type="file" id="fLogo" accept="image/jpeg,image/png,image/gif,image/webp">
+      <div id="fPrev" style="margin-top:10px;display:flex;gap:12px;align-items:center"></div>
+      <button class="btn az" id="fGuardar" style="margin-top:16px;width:100%">Guardar perfil</button>
+      <div class="msg" id="fMsg" role="status"></div></div>
     <div class="dos">
       <div class="card">
         <h3>Publicar en el pizarrón</h3>
@@ -230,12 +243,18 @@ footer img{height:56px}
         <label for="pCuerpo">Texto (máximo 600 caracteres)</label><textarea id="pCuerpo" maxlength="600"></textarea>
         <label for="pArchivo">Flyer, imagen, GIF o audio (opcional, máximo 5 MB)</label>
         <input type="file" id="pArchivo" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/ogg,audio/wav,audio/mp4,audio/aac">
+        <div id="pPrev" style="margin-top:10px"></div>
         <button class="btn az" id="pEnviar" style="margin-top:16px;width:100%">Publicar en el pizarrón</button>
         <div class="msg" id="pMsg" role="status"></div>
       </div>
       <div class="card"><h3>Mis publicaciones</h3><ul class="lista" id="misPubs" style="margin-top:12px"></ul></div>
     </div>
   </div>
+</div></section>
+
+<section class="view" id="v-grupos"><div class="wrap">
+  <h2>Grupos estudiantiles</h2><p class="sub">Conoce a los grupos de la OGE y escríbeles.</p>
+  <div class="grid" id="gGrid"></div>
 </div></section>
 
 <section class="view" id="v-chat"><div class="wrap">
@@ -290,7 +309,7 @@ const iso = (d, t) => new Date(`${d}T${t}:00-05:00`).toISOString();
 const hhmm = i => new Date(i).toLocaleTimeString("es-CO", {hour:"2-digit", minute:"2-digit", timeZone:"America/Bogota"});
 const dia = (d, o) => new Date(d + "T12:00:00").toLocaleDateString("es-CO", o);
 const say = (el, t, ok) => { el.textContent = t; el.className = "msg " + (ok ? "o" : "e"); };
-let user = null, grupo = null, filtro = "todo", notas = [];
+let user = null, grupo = null, filtro = "todo", notas = [], perfilId = null, logoNuevo = null, logoQuitar = false;
 
 const b = new Date(new Date().toLocaleString("en-US", {timeZone:"America/Bogota"}));
 const hoy = `${b.getFullYear()}-${pad(b.getMonth()+1)}-${pad(b.getDate())}`;
@@ -300,11 +319,11 @@ $("#rFecha").value = hoy;
 /* navegación */
 function ruta() {
   const v = (location.hash || "#pizarron").slice(1);
-  const vista = ["pizarron","reservar","grupo","chat","admin"].includes(v) ? v : "pizarron";
+  const vista = ["pizarron","reservar","grupos","grupo","chat","admin"].includes(v) ? v : "pizarron";
   $$(".view").forEach(s => s.classList.toggle("on", s.id === "v-" + vista));
   $$("nav a").forEach(a => a.dataset.v === vista ? a.setAttribute("aria-current","page") : a.removeAttribute("aria-current"));
   $("#panelNot").hidden = true; window.scrollTo(0, 0);
-  clearInterval(chatT); if (vista === "chat") { cargarSalas(); cargarMsgs(); chatT = setInterval(cargarMsgs, 6000); }
+  clearInterval(chatT); if (vista === "grupos") cargarGrupos(); if (vista === "chat") { cargarSalas(); cargarMsgs(); chatT = setInterval(cargarMsgs, 6000); }
 }
 addEventListener("hashchange", ruta);
 
@@ -322,13 +341,14 @@ async function sesion() {
     $("#gEstado").textContent = !grupo ? "No encontramos los datos del grupo." : grupo.aprobado
       ? "Cuenta aprobada por la OGE. Ya puedes publicar y reservar." : "Cuenta pendiente: la OGE debe aprobar tu grupo antes de publicar o reservar.";
     cargarMisPubs();
+    if (grupo && perfilId !== user.id) { $("#fDesc").value = grupo.descripcion || ""; $("#fRedes").value = grupo.redes || ""; perfilId = user.id; prevLogo(); }
   }
   const ok = !!(grupo && grupo.aprobado), av = $("#resAviso");
   $("#resForm").hidden = !ok; av.hidden = ok;
   av.innerHTML = !user ? 'Para reservar, <a href="#grupo">ingresa con la cuenta de tu grupo</a>.' : "Tu grupo aún no está aprobado por la OGE.";
   $("#pEnviar").disabled = !ok;
   $("#misRes").hidden = !ok; if (ok) cargarMisRes();
-  $("#navChat").hidden = !ok; if (location.hash === "#chat") ruta();
+  $("#navChat").hidden = !ok; if (["#chat", "#grupos"].includes(location.hash)) ruta();
 }
 db.auth.onAuthStateChange(e => { if (e === "SIGNED_IN" || e === "SIGNED_OUT") setTimeout(sesion, 0); });
 
@@ -389,7 +409,7 @@ $("#pEnviar").onclick = async () => {
   }
   const { error } = await db.from("noticias").insert({ grupo_id: user.id, tipo: t, titulo, cuerpo, fecha_evento: t === "evento" ? $("#pFecha").value : null, media_url, media_tipo });
   if (error) return say(m, "No se pudo publicar. Verifica que tu grupo esté aprobado.", false);
-  $("#pTitulo").value = $("#pCuerpo").value = $("#pArchivo").value = ""; say(m, "Publicado en el pizarrón.", true);
+  $("#pTitulo").value = $("#pCuerpo").value = $("#pArchivo").value = ""; $("#pPrev").innerHTML = ""; say(m, "Publicado en el pizarrón.", true);
   cargarMisPubs(); cargarPizarron(); cargarNot();
 };
 async function cargarMisPubs() {
@@ -540,6 +560,59 @@ $("#soyAdmin").onclick = () => {
   tab(false); $("#cNombre").value = "Dirección OGE"; $("#cCoord").value = "Dirección de la OGE"; $("#cCorreo").value = "agarzon@uao.edu.co"; $("#cClave").focus();
   say($("#aMsg"), "Elige una contraseña que solo tú conozcas y pulsa Crear cuenta del grupo. Solo este correo recibe el rol de administrador.", true);
 };
+
+/* vista previa del archivo del pizarrón */
+$("#pArchivo").onchange = () => {
+  const f = $("#pArchivo").files[0], p = $("#pPrev"); p.innerHTML = ""; if (!f) return;
+  const okT = /^(image\/(jpeg|png|gif|webp)|audio\/(mpeg|ogg|wav|mp4|aac))$/.test(f.type);
+  if (!okT || f.size > 5 * 1024 * 1024) { $("#pArchivo").value = ""; return say($("#pMsg"), !okT ? "Formato no permitido." : "El archivo pesa más de 5 MB.", false); }
+  $("#pMsg").textContent = "";
+  const u = URL.createObjectURL(f);
+  p.innerHTML = (f.type.startsWith("audio") ? `<audio controls src="${u}" style="width:100%"></audio>` : `<img src="${u}" alt="Vista previa" style="max-width:100%;max-height:220px;border-radius:8px">`)
+    + `<div style="margin-top:6px"><button class="btn l" type="button" id="pQuitar">Quitar archivo</button> <small>${esc(f.name)}</small></div>`;
+  $("#pQuitar").onclick = () => { $("#pArchivo").value = ""; p.innerHTML = ""; URL.revokeObjectURL(u); };
+};
+
+/* perfil del grupo */
+function prevLogo() {
+  const src = logoNuevo ? URL.createObjectURL(logoNuevo) : (!logoQuitar && grupo && grupo.logo_url);
+  $("#fPrev").innerHTML = src ? `<img class="logo-g" src="${esc(src)}" alt="Logo del grupo"><button class="btn l" type="button" id="fQuitar">Quitar logo</button>` : "";
+  if (src) $("#fQuitar").onclick = () => { logoNuevo = null; logoQuitar = true; $("#fLogo").value = ""; prevLogo(); };
+}
+$("#fLogo").onchange = () => {
+  const f = $("#fLogo").files[0]; if (!f) return;
+  if (!/^image\/(jpeg|png|gif|webp)$/.test(f.type) || f.size > 5 * 1024 * 1024) { $("#fLogo").value = ""; return say($("#fMsg"), "El logo debe ser JPG, PNG, GIF o WEBP de máximo 5 MB.", false); }
+  $("#fMsg").textContent = ""; logoNuevo = f; logoQuitar = false; prevLogo();
+};
+$("#fGuardar").onclick = async () => {
+  const m = $("#fMsg"); let logo = logoQuitar ? null : (grupo.logo_url || null);
+  if (logoNuevo) {
+    say(m, "Subiendo logo…", true);
+    const ext = {"image/jpeg":"jpg","image/png":"png","image/gif":"gif","image/webp":"webp"}[logoNuevo.type], ruta = `${user.id}/logo-${Date.now()}.${ext}`;
+    const up = await db.storage.from("medios").upload(ruta, logoNuevo, { contentType: logoNuevo.type });
+    if (up.error) return say(m, "No se pudo subir el logo: " + up.error.message, false);
+    logo = db.storage.from("medios").getPublicUrl(ruta).data.publicUrl;
+  }
+  const { error } = await db.rpc("guardar_perfil", { p_descripcion: $("#fDesc").value, p_redes: $("#fRedes").value, p_logo: logo });
+  if (error) return say(m, "No se pudo guardar el perfil. Verifica que tu grupo esté aprobado.", false);
+  const viejo = grupo.logo_url;
+  if (viejo && viejo !== logo && viejo.includes("/medios/")) await db.storage.from("medios").remove([decodeURIComponent(viejo.split("/medios/")[1])]);
+  logoNuevo = null; logoQuitar = false; $("#fLogo").value = ""; perfilId = null; await sesion(); say(m, "Perfil guardado.", true);
+};
+
+/* directorio de grupos */
+async function cargarGrupos() {
+  const { data, error } = await db.rpc("perfiles");
+  $("#gGrid").innerHTML = error ? "<p>No se pudieron cargar los grupos.</p>" : (data || []).map(g => `<article class="card" style="margin:0">
+    <div style="display:flex;gap:12px;align-items:center">${g.logo_url ? `<img class="logo-g" loading="lazy" src="${esc(g.logo_url)}" alt="Logo de ${esc(g.nombre)}">` : `<div class="logo-g ini" aria-hidden="true">${esc(g.nombre.charAt(0).toUpperCase())}</div>`}<h3 style="margin:0">${esc(g.nombre)}</h3></div>
+    <p style="margin:12px 0 0;white-space:pre-line;overflow-wrap:anywhere">${esc(g.descripcion || "Este grupo aún no ha escrito su descripción.")}</p>
+    ${g.redes ? `<p class="meta">${esc(g.redes)}</p>` : ""}
+    ${grupo && grupo.aprobado && g.id !== user.id ? `<button class="btn l" style="margin-top:12px" data-esc="${esc(g.id)}" data-nom="${esc(g.nombre)}">Escribir al grupo</button>` : ""}</article>`).join("") || "<p>Aún no hay grupos aprobados.</p>";
+  $$("[data-esc]").forEach(b => b.onclick = async () => {
+    const r = await db.rpc("iniciar_chat", { p_otro: b.dataset.esc }); if (r.error) return;
+    sala = r.data; $("#chatTit").textContent = b.dataset.nom; delete $("#chatL").dataset.ok; location.hash = "#chat";
+  });
+}
 
 ruta(); cargarPizarron(); cargarAgenda(); cargarAhora(); cargarNot(); sesion();
 </script>
