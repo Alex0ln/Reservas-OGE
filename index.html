@@ -110,6 +110,8 @@ footer img{height:56px}
 .nota img{max-height:340px;object-fit:contain;background:#eef2fb}
 .ahora{font-weight:700;color:var(--azul)}
 .m{max-width:82%;padding:8px 12px;border-radius:12px;background:#eef2fb;overflow-wrap:anywhere}
+.chatg{display:grid;grid-template-columns:.85fr 1.15fr;gap:20px;align-items:start}
+@media (max-width:820px){.chatg{grid-template-columns:1fr}}
 .m.yo{align-self:flex-end;background:var(--azul);color:#fff}
 .m small{display:block;font-weight:700;opacity:.8}
 [hidden]{display:none!important}
@@ -209,6 +211,7 @@ footer img{height:56px}
         <button class="btn az" id="bUp" style="margin-top:16px;width:100%">Crear cuenta del grupo</button>
       </div>
       <div class="msg" id="aMsg" role="status"></div>
+      <button class="btn l" id="soyAdmin" type="button" style="width:100%;margin-top:8px">Soy la dirección de la OGE</button>
     </div>
   </div>
 
@@ -236,10 +239,17 @@ footer img{height:56px}
 </div></section>
 
 <section class="view" id="v-chat"><div class="wrap">
-  <h2>Chat de los grupos</h2><p class="sub">Solo los grupos aprobados pueden leer y escribir aquí.</p>
-  <div class="card"><div id="chatL" style="height:min(55vh,460px);overflow:auto;display:flex;flex-direction:column;gap:8px" role="log" aria-live="polite"></div>
-    <div style="display:flex;gap:8px;margin-top:12px"><input type="text" id="chatT" maxlength="500" placeholder="Escribe un mensaje" aria-label="Mensaje"><button class="btn az" id="chatE">Enviar</button></div>
-    <div class="msg" id="chatM" role="status"></div></div>
+  <h2>Chat</h2><p class="sub">Escríbele a un grupo en privado o participa en las salas que crea la dirección.</p>
+  <div class="chatg">
+    <div class="card"><h3>Conversaciones</h3>
+      <label for="chatCon">Nueva conversación con</label>
+      <div style="display:flex;gap:8px"><select id="chatCon"></select><button class="btn az" id="chatNueva" style="min-height:44px">Abrir</button></div>
+      <ul class="lista" id="chatSalas" style="margin-top:14px"></ul></div>
+    <div class="card"><h3 id="chatTit">Elige una conversación</h3>
+      <div id="chatL" style="height:min(50vh,420px);overflow:auto;display:flex;flex-direction:column;gap:8px;margin-top:10px" role="log" aria-live="polite"></div>
+      <div style="display:flex;gap:8px;margin-top:12px"><input type="text" id="chatT" maxlength="500" placeholder="Escribe un mensaje" aria-label="Mensaje"><button class="btn az" id="chatE">Enviar</button></div>
+      <div class="msg" id="chatM" role="status"></div></div>
+  </div>
 </div></section>
 
 <section class="view" id="v-admin"><div class="wrap">
@@ -252,6 +262,10 @@ footer img{height:56px}
         <label for="avC">Mensaje</label><textarea id="avC" maxlength="400"></textarea>
         <button class="btn az" id="avEnviar" style="margin-top:16px;width:100%">Enviar notificación</button>
         <div class="msg" id="avMsg" role="status"></div><ul class="lista" id="aAvisos" style="margin-top:12px"></ul></div>
+      <div class="card"><h3>Salas de chat</h3><p class="sub" style="margin:0 0 8px">Crea una sala con todos los grupos aprobados.</p>
+        <label for="salaN">Nombre de la sala</label><input type="text" id="salaN" maxlength="60" placeholder="Anuncios generales">
+        <button class="btn az" id="salaC" style="margin-top:16px;width:100%">Crear sala con todos los grupos</button>
+        <div class="msg" id="salaM" role="status"></div><ul class="lista" id="aSalas" style="margin-top:12px"></ul></div>
     </div>
     <div>
       <div class="card"><h3>Grupos estudiantiles</h3><ul class="lista" id="aGrupos" style="margin-top:12px"></ul></div>
@@ -290,7 +304,7 @@ function ruta() {
   $$(".view").forEach(s => s.classList.toggle("on", s.id === "v-" + vista));
   $$("nav a").forEach(a => a.dataset.v === vista ? a.setAttribute("aria-current","page") : a.removeAttribute("aria-current"));
   $("#panelNot").hidden = true; window.scrollTo(0, 0);
-  clearInterval(chatT); if (vista === "chat") { cargarChat(); chatT = setInterval(cargarChat, 6000); }
+  clearInterval(chatT); if (vista === "chat") { cargarSalas(); cargarMsgs(); chatT = setInterval(cargarMsgs, 6000); }
 }
 addEventListener("hashchange", ruta);
 
@@ -468,7 +482,18 @@ async function cargarAdmin() {
   const av = await db.from("avisos").select("*").order("creada_en", { ascending: false }).limit(10);
   $("#aAvisos").innerHTML = (av.data || []).map(a => `<li class="item"><div><b>${esc(a.titulo)}</b><small>${esc(a.cuerpo)}</small></div><button class="btn l" data-dav="${esc(a.id)}">Quitar</button></li>`).join("");
   $$("[data-dav]").forEach(x => x.onclick = async () => { await db.from("avisos").delete().eq("id", x.dataset.dav); cargarAdmin(); cargarNot(); });
+  const sl = await db.from("salas").select("*").eq("tipo", "grupal").order("creada_en", { ascending: false });
+  $("#aSalas").innerHTML = (sl.data || []).map(s => `<li class="item"><div><b>${esc(s.nombre)}</b></div><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn l" data-sin="${esc(s.id)}">Agregar grupos nuevos</button><button class="btn l" data-bs="${esc(s.id)}">Eliminar</button></div></li>`).join("");
+  $$("[data-sin]").forEach(x => x.onclick = async () => { await db.rpc("sincronizar_sala", { p_sala: x.dataset.sin }); say($("#salaM"), "Grupos actualizados en la sala.", true); });
+  $$("[data-bs]").forEach(x => x.onclick = async () => { await db.from("salas").delete().eq("id", x.dataset.bs); cargarAdmin(); });
 }
+$("#salaC").onclick = async () => {
+  const n = $("#salaN").value.trim(), m = $("#salaM");
+  if (n.length < 2) return say(m, "Escribe el nombre de la sala.", false);
+  const { error } = await db.rpc("crear_sala_grupal", { p_nombre: n });
+  if (error) return say(m, "No se pudo crear la sala.", false);
+  $("#salaN").value = ""; say(m, "Sala creada con todos los grupos aprobados.", true); cargarAdmin();
+};
 $("#aFecha").value = hoy; $("#aFecha").onchange = aRes;
 $("#avEnviar").onclick = async () => {
   const t = $("#avT").value.trim(), c = $("#avC").value.trim(), m = $("#avMsg");
@@ -479,23 +504,42 @@ $("#avEnviar").onclick = async () => {
 };
 
 /* chat */
-let chatT = null;
-async function cargarChat() {
-  const l = $("#chatL");
-  if (!(grupo && grupo.aprobado)) { l.innerHTML = '<p class="sub">Ingresa con un grupo aprobado para usar el chat.</p>'; return; }
-  const { data } = await db.from("mensajes").select("*").order("creada_en", { ascending: false }).limit(60);
+let chatT = null, sala = null;
+async function cargarSalas() {
+  if (!(grupo && grupo.aprobado)) { $("#chatSalas").innerHTML = "<li>Ingresa con un grupo aprobado para usar el chat.</li>"; return; }
+  const [s, d] = await Promise.all([db.rpc("mis_salas"), db.rpc("directorio")]);
+  $("#chatSalas").innerHTML = (s.data || []).map(x => `<li><button class="btn l" style="width:100%;justify-content:flex-start;text-align:left;${x.id === sala ? "border-color:var(--azul)" : ""}" data-sala="${esc(x.id)}" data-tit="${esc(x.titulo || "Conversación")}">${x.tipo === "grupal" ? "Sala · " : ""}${esc(x.titulo || "Conversación")}</button></li>`).join("") || "<li>Aún no tienes conversaciones. Abre una con un grupo.</li>";
+  $$("[data-sala]").forEach(b => b.onclick = () => abrirSala(b.dataset.sala, b.dataset.tit));
+  const sel = $("#chatCon"), prev = sel.value;
+  sel.innerHTML = (d.data || []).map(g => `<option value="${esc(g.id)}">${esc(g.nombre)}</option>`).join(""); if (prev) sel.value = prev;
+}
+function abrirSala(id, tit) { sala = id; $("#chatTit").textContent = tit; delete $("#chatL").dataset.ok; cargarMsgs(); cargarSalas(); }
+async function cargarMsgs() {
+  const l = $("#chatL"); if (!(grupo && grupo.aprobado) || !sala) return;
+  const { data } = await db.from("mensajes").select("*").eq("sala_id", sala).order("creada_en", { ascending: false }).limit(60);
   const abajo = l.scrollHeight - l.scrollTop - l.clientHeight < 80;
   l.innerHTML = (data || []).reverse().map(x => `<div class="m${x.grupo_id === user.id ? " yo" : ""}"><small>${esc(x.grupo_nombre)} · ${hhmm(x.creada_en)}</small>${esc(x.texto)}${grupo.es_admin ? ` <button class="btn l" data-dm="${esc(x.id)}" style="min-height:28px;padding:0 8px">Borrar</button>` : ""}</div>`).join("") || '<p class="sub">Aún no hay mensajes. Escribe el primero.</p>';
   if (abajo || !l.dataset.ok) { l.scrollTop = l.scrollHeight; l.dataset.ok = 1; }
-  $$("[data-dm]").forEach(x => x.onclick = async () => { await db.from("mensajes").delete().eq("id", x.dataset.dm); cargarChat(); });
+  $$("[data-dm]").forEach(x => x.onclick = async () => { await db.from("mensajes").delete().eq("id", x.dataset.dm); cargarMsgs(); });
 }
+$("#chatNueva").onclick = async () => {
+  const otro = $("#chatCon").value; if (!otro) return say($("#chatM"), "No hay otros grupos aprobados todavía.", false);
+  const { data, error } = await db.rpc("iniciar_chat", { p_otro: otro });
+  if (error) return say($("#chatM"), "No se pudo abrir la conversación.", false);
+  $("#chatM").textContent = ""; await cargarSalas(); abrirSala(data, $("#chatCon").selectedOptions[0].textContent);
+};
 $("#chatE").onclick = async () => {
   const t = $("#chatT").value.trim(); if (!t || !user) return;
-  const { error } = await db.from("mensajes").insert({ grupo_id: user.id, texto: t });
+  if (!sala) return say($("#chatM"), "Elige una conversación primero.", false);
+  const { error } = await db.from("mensajes").insert({ grupo_id: user.id, sala_id: sala, texto: t });
   if (error) return say($("#chatM"), "No se pudo enviar el mensaje.", false);
-  $("#chatT").value = ""; $("#chatM").textContent = ""; delete $("#chatL").dataset.ok; cargarChat();
+  $("#chatT").value = ""; $("#chatM").textContent = ""; delete $("#chatL").dataset.ok; cargarMsgs(); cargarSalas();
 };
 $("#chatT").addEventListener("keydown", e => { if (e.key === "Enter") $("#chatE").click(); });
+$("#soyAdmin").onclick = () => {
+  tab(false); $("#cNombre").value = "Dirección OGE"; $("#cCoord").value = "Dirección de la OGE"; $("#cCorreo").value = "agarzon@uao.edu.co"; $("#cClave").focus();
+  say($("#aMsg"), "Elige una contraseña que solo tú conozcas y pulsa Crear cuenta del grupo. Solo este correo recibe el rol de administrador.", true);
+};
 
 ruta(); cargarPizarron(); cargarAgenda(); cargarAhora(); cargarNot(); sesion();
 </script>
