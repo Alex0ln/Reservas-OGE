@@ -1,345 +1,629 @@
--- =====================================================================
--- OGE · SQL COMPLETO Y CORREGIDO
--- Pégalo ENTERO en Supabase > SQL Editor > New query > Run.
--- Se puede ejecutar varias veces: NO borra reservas ni datos.
--- =====================================================================
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OGE · Organización de Grupos Estudiantiles</title>
+<link rel="icon" href="espiral.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --azul:#0a3a9c; --azul-prof:#082b75; --naranja:#f26b05; --naranja-osc:#b84d00;
+  --fondo:#f2f5fb; --papel:#fff; --tinta:#0e1b3d; --suave:#51608a; --linea:#d6ddee; --error:#b3261e; --ok:#0a7a4b;
+  --display:"Bricolage Grotesque","Trebuchet MS",system-ui,sans-serif; --texto:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-padding-top:80px}
+body{margin:0;background:var(--fondo);color:var(--tinta);font:16px/1.55 var(--texto)}
+img{max-width:100%}
+a{color:var(--azul)}
+:focus-visible{outline:3px solid var(--naranja);outline-offset:2px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
 
--- ---------- 1. GRUPOS (una cuenta por grupo estudiantil) ----------
-create table if not exists public.grupos (
-  id uuid primary key references auth.users(id) on delete cascade,
-  nombre text not null unique check (char_length(nombre) between 2 and 80),
-  coordinador text not null check (char_length(coordinador) between 2 and 100),
-  telefono text,
-  aprobado boolean not null default false,
-  es_admin boolean not null default false,
-  descripcion text check (descripcion is null or char_length(descripcion) <= 500),
-  logo_url text,
-  redes text check (redes is null or char_length(redes) <= 120),
-  creado_en timestamptz not null default now()
-);
-alter table public.grupos add column if not exists es_admin boolean not null default false;
-alter table public.grupos add column if not exists descripcion text
-  check (descripcion is null or char_length(descripcion) <= 500);
-alter table public.grupos add column if not exists logo_url text;
-alter table public.grupos add column if not exists redes text
-  check (redes is null or char_length(redes) <= 120);
-alter table public.grupos enable row level security;
+/* barra */
+.top{position:sticky;top:0;z-index:5;background:rgba(242,245,251,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--linea)}
+.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:64px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--azul)}
+.brand img{height:40px;width:auto}
+.brand b{font:800 1.5rem/1 var(--display);letter-spacing:-.01em}
+nav{display:flex;gap:4px}
+nav a{padding:10px 14px;border-radius:999px;text-decoration:none;font-weight:600;color:var(--tinta);min-height:44px;display:inline-flex;align-items:center}
+nav a:hover{background:#e3e9f7}
+nav a[aria-current=page]{background:var(--azul);color:#fff}
 
--- ---------- 2. FUNCIONES BASE ----------
-create or replace function public.es_admin() returns boolean
-language sql stable security definer set search_path = public as $$
-  select exists (select 1 from grupos where id = auth.uid() and es_admin);
-$$;
+/* portada */
+.hero{position:relative;overflow:hidden;background:var(--azul);color:#fff}
+.hero .wrap{position:relative;padding-top:56px;padding-bottom:64px;min-height:340px}
+.hero h1{font:800 clamp(2.1rem,5.5vw,3.6rem)/1.02 var(--display);letter-spacing:-.02em;margin:0 0 16px;max-width:15ch}
+.hero p{max-width:46ch;font-size:1.1rem;margin:0 0 24px;color:#dbe5ff}
+.hero .esp{position:absolute;right:-30px;top:-20px;height:118%;width:auto;opacity:.96;pointer-events:none;animation:entra 1.1s cubic-bezier(.2,.7,.2,1) both}
+@keyframes entra{from{opacity:0;transform:rotate(-14deg) scale(.92)}to{opacity:.96;transform:none}}
+.hero .txt{position:relative;z-index:1}
+@media (max-width:700px){.hero .esp{opacity:.28;right:-80px}}
+@media (prefers-reduced-motion:reduce){.hero .esp{animation:none}}
 
-create or replace function public.grupo_aprobado() returns boolean
-language sql stable security definer set search_path = public as $$
-  select exists (select 1 from grupos where id = auth.uid() and aprobado);
-$$;
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:10px 20px;border-radius:10px;border:2px solid transparent;font:700 1rem var(--texto);cursor:pointer;text-decoration:none}
+.btn.p{background:var(--naranja);color:#1c0b00}
+.btn.p:hover{background:#ff7c1a}
+.btn.s{background:transparent;border-color:#fff;color:#fff}
+.btn.az{background:var(--azul);color:#fff}
+.btn.az:hover{background:var(--azul-prof)}
+.btn.l{background:transparent;border-color:var(--linea);color:var(--tinta);min-height:40px;padding:6px 14px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.hero .btn+.btn{margin-left:8px}
 
-create or replace function public.poner_nombre_grupo() returns trigger
-language plpgsql security definer set search_path = public as $$
-begin
-  select nombre into new.grupo_nombre from grupos where id = new.grupo_id;
-  return new;
-end $$;
+/* secciones */
+.view{display:none;padding:40px 0 64px}
+.view.on{display:block}
+h2{font:800 clamp(1.5rem,3.5vw,2.1rem)/1.1 var(--display);margin:0 0 6px;letter-spacing:-.01em}
+.sub{color:var(--suave);margin:0 0 24px}
 
--- Al crear la cuenta se crea el grupo; solo el correo del director es administrador
-create or replace function public.nuevo_grupo() returns trigger
-language plpgsql security definer set search_path = public as $$
-declare
-  dir boolean := coalesce(lower(new.email) = 'agarzon@uao.edu.co', false);
-  auto_aprobar boolean := true;   -- true = todos los grupos nuevos quedan aprobados; false = la OGE los aprueba a mano
-begin
-  insert into grupos (id, nombre, coordinador, telefono, aprobado, es_admin)
-  values (new.id, trim(new.raw_user_meta_data->>'nombre'),
-          trim(new.raw_user_meta_data->>'coordinador'), new.raw_user_meta_data->>'telefono', auto_aprobar or dir, dir);
-  return new;
-end $$;
-drop trigger if exists al_crear_usuario on auth.users;
-create trigger al_crear_usuario after insert on auth.users
-  for each row execute function public.nuevo_grupo();
+/* pizarrón */
+.board{background:var(--azul-prof);border-radius:18px;padding:22px;box-shadow:inset 0 0 0 6px #0b3489}
+.chips{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+.chip{min-height:40px;padding:6px 16px;border-radius:999px;border:2px solid #4f72c8;background:transparent;color:#fff;font:600 .95rem var(--texto);cursor:pointer}
+.chip[aria-pressed=true]{background:#fff;color:var(--azul);border-color:#fff}
+.notas{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
+.nota{background:var(--papel);color:var(--tinta);border-radius:10px;padding:18px 18px 16px;position:relative;display:flex;flex-direction:column;gap:8px}
+.nota::before{content:"";position:absolute;top:-7px;left:18px;width:14px;height:14px;border-radius:50%;background:var(--azul);box-shadow:0 2px 0 rgba(0,0,0,.25)}
+.nota.evento::before{background:var(--naranja)}
+.nota h3{font:800 1.2rem/1.15 var(--display);margin:6px 0 0}
+.nota p{margin:0;white-space:pre-line;overflow-wrap:anywhere}
+.meta{font-size:.88rem;color:var(--suave);margin-top:auto;padding-top:6px}
+.fecha{align-self:flex-start;background:#fff1e6;color:var(--naranja-osc);font-weight:700;padding:2px 10px;border-radius:6px;font-size:.9rem}
+.vacio{color:#dbe5ff;padding:24px 4px}
 
-drop policy if exists "ver mi grupo" on public.grupos;
-drop policy if exists "admin ve grupos" on public.grupos;
-drop policy if exists "admin edita grupos" on public.grupos;
-create policy "ver mi grupo" on public.grupos for select to authenticated using (id = auth.uid());
-create policy "admin ve grupos" on public.grupos for select to authenticated using (public.es_admin());
-create policy "admin edita grupos" on public.grupos for update to authenticated
-  using (public.es_admin()) with check (public.es_admin());
+/* formularios */
+.card{background:var(--papel);border:1px solid var(--linea);border-radius:14px;padding:22px;margin-bottom:20px}
+.card h3{font:800 1.2rem/1.2 var(--display);margin:0 0 4px}
+label{display:block;font-weight:700;font-size:.92rem;margin:14px 0 4px}
+input,select,textarea{width:100%;min-height:44px;padding:9px 12px;border:1.5px solid #b9c4e0;border-radius:8px;background:#fff;color:var(--tinta);font:inherit}
+textarea{min-height:96px;resize:vertical}
+.fila{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:520px){.fila{grid-template-columns:1fr}}
+.msg{margin-top:12px;font-weight:700;min-height:1.4em}
+.msg.e{color:var(--error)} .msg.o{color:var(--ok)}
+.aviso{background:#fff1e6;border:1px solid #f4c9a4;border-radius:10px;padding:12px 14px;margin-bottom:20px}
+.dos{display:grid;grid-template-columns:1.1fr .9fr;gap:20px;align-items:start}
+@media (max-width:820px){.dos{grid-template-columns:1fr}}
+.tabs{display:flex;gap:6px;margin-bottom:6px}
+.tabs button{flex:1;min-height:44px;border:0;border-bottom:3px solid var(--linea);background:none;font:700 1rem var(--texto);color:var(--suave);cursor:pointer}
+.tabs button[aria-selected=true]{border-color:var(--naranja);color:var(--tinta)}
 
--- ---------- 3. PIZARRÓN (noticias y eventos, con flyers) ----------
-create table if not exists public.noticias (
-  id uuid primary key default gen_random_uuid(),
-  grupo_id uuid not null references public.grupos(id) on delete cascade,
-  grupo_nombre text not null default '',
-  tipo text not null check (tipo in ('noticia','evento')),
-  titulo text not null check (char_length(titulo) between 3 and 120),
-  cuerpo text not null check (char_length(cuerpo) between 3 and 600),
-  fecha_evento date,
-  media_url text,
-  media_tipo text check (media_tipo in ('imagen','audio')),
-  creada_en timestamptz not null default now()
-);
-alter table public.noticias add column if not exists media_url text;
-alter table public.noticias add column if not exists media_tipo text check (media_tipo in ('imagen','audio'));
-alter table public.noticias drop constraint if exists media_url_valida;
-alter table public.noticias add constraint media_url_valida
-  check (media_url is null or media_url like '%/storage/v1/object/public/medios/%');
-alter table public.noticias enable row level security;
-drop trigger if exists nombre_noticia on public.noticias;
-create trigger nombre_noticia before insert on public.noticias
-  for each row execute function public.poner_nombre_grupo();
-drop policy if exists "leer pizarron" on public.noticias;
-drop policy if exists "publicar" on public.noticias;
-drop policy if exists "borrar la mia" on public.noticias;
-drop policy if exists "admin borra noticias" on public.noticias;
-create policy "leer pizarron" on public.noticias for select to anon, authenticated using (true);
-create policy "publicar" on public.noticias for insert to authenticated
-  with check (grupo_id = auth.uid() and public.grupo_aprobado());
-create policy "borrar la mia" on public.noticias for delete to authenticated using (grupo_id = auth.uid());
-create policy "admin borra noticias" on public.noticias for delete to authenticated using (public.es_admin());
+/* agenda y listas */
+.lista{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.item{border:1px solid var(--linea);border-left:6px solid var(--naranja);border-radius:8px;padding:10px 12px;background:#fff;display:flex;gap:12px;justify-content:space-between;align-items:center}
+.item b{display:block}
+.item small{color:var(--suave)}
+.hora{font:800 1.05rem var(--display);color:var(--azul);white-space:nowrap}
+.libre{color:var(--ok);font-weight:700}
+footer{border-top:1px solid var(--linea);padding:28px 0;color:var(--suave);font-size:.92rem}
+footer .wrap{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+footer img{height:56px}
+.campana{position:relative;min-width:44px;min-height:44px;border:0;border-radius:999px;background:#e3e9f7;color:var(--azul);cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.campana svg{width:22px;height:22px}
+.campana .n{position:absolute;top:2px;right:2px;min-width:20px;height:20px;border-radius:10px;background:var(--naranja);color:#1c0b00;font:700 .75rem/20px var(--texto);text-align:center;padding:0 5px}
+.panel{position:fixed;top:68px;right:12px;width:min(380px,calc(100vw - 24px));max-height:70vh;overflow:auto;background:#fff;border:1px solid var(--linea);border-radius:14px;box-shadow:0 12px 40px rgba(14,27,61,.25);padding:16px;z-index:9}
+.nota img,.nota audio{width:100%;border-radius:8px}
+.nota img{max-height:340px;object-fit:contain;background:#eef2fb}
+.ahora{font-weight:700;color:var(--azul)}
+.m{max-width:82%;padding:8px 12px;border-radius:12px;background:#eef2fb;overflow-wrap:anywhere}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px}
+.logo-g{width:64px;height:64px;border-radius:14px;object-fit:cover;background:#e3e9f7;flex:none}
+.ini{display:flex;align-items:center;justify-content:center;background:var(--azul);color:#fff;font:800 1.6rem var(--display)}
+.chatg{display:grid;grid-template-columns:.85fr 1.15fr;gap:20px;align-items:start}
+@media (max-width:820px){.chatg{grid-template-columns:1fr}}
+.m.yo{align-self:flex-end;background:var(--azul);color:#fff}
+.m small{display:block;font-weight:700;opacity:.8}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="#pizarron" aria-label="OGE, inicio"><img src="espiral.png" alt=""><b>OGE</b></a>
+  <nav aria-label="Principal">
+    <a href="#pizarron" data-v="pizarron">Pizarrón</a>
+    <a href="#reservar" data-v="reservar">Reservar espacio</a>
+    <a href="#grupos" data-v="grupos">Grupos</a>
+    <a href="#chat" data-v="chat" id="navChat" hidden>Chat</a>
+    <a href="#admin" data-v="admin" id="navAdmin" hidden>Administración</a>
+    <a href="#grupo" data-v="grupo" id="navGrupo">Ingresar</a>
+    <button class="campana" id="bCamp" aria-label="Notificaciones" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span class="n" id="nCamp" hidden>0</span></button>
+  </nav>
+</div></header>
+<div class="panel" id="panelNot" hidden role="region" aria-label="Notificaciones"><h3 style="margin:0 0 10px;font:800 1.1rem var(--display)">Notificaciones</h3><ul class="lista" id="listaNot"></ul></div>
 
--- ---------- 4. RESERVAS DEL ESPACIO ----------
-create table if not exists public.reservas (
-  id uuid primary key default gen_random_uuid(),
-  grupo_id uuid not null references public.grupos(id) on delete cascade,
-  grupo_nombre text not null default '',
-  inicio timestamptz not null,
-  fin timestamptz not null,
-  motivo text not null check (char_length(motivo) between 3 and 200),
-  responsable text not null check (char_length(responsable) between 2 and 100),
-  encargado text not null check (char_length(encargado) between 2 and 100),
-  estado text not null default 'confirmada' check (estado in ('confirmada','cancelada')),
-  creada_en timestamptz not null default now(),
-  check (fin > inicio and fin <= inicio + interval '12 hours'),
-  constraint sin_solapes exclude using gist (tstzrange(inicio, fin) with &&)
-    where (estado <> 'cancelada')
-);
-alter table public.reservas enable row level security;
-drop trigger if exists nombre_reserva on public.reservas;
-create trigger nombre_reserva before insert on public.reservas
-  for each row execute function public.poner_nombre_grupo();
-drop policy if exists "ver mis reservas" on public.reservas;
-drop policy if exists "reservar" on public.reservas;
-drop policy if exists "cancelar la mia" on public.reservas;
-drop policy if exists "admin ve reservas" on public.reservas;
-drop policy if exists "admin cancela reservas" on public.reservas;
-create policy "ver mis reservas" on public.reservas for select to authenticated using (grupo_id = auth.uid());
--- 24 horas de antelación y máximo 2 horas
-create policy "reservar" on public.reservas for insert to authenticated
-  with check (grupo_id = auth.uid() and public.grupo_aprobado() and estado = 'confirmada'
-    and inicio >= now() + interval '24 hours' and fin <= inicio + interval '2 hours');
-create policy "cancelar la mia" on public.reservas for update to authenticated
-  using (grupo_id = auth.uid()) with check (grupo_id = auth.uid());
-create policy "admin ve reservas" on public.reservas for select to authenticated using (public.es_admin());
-create policy "admin cancela reservas" on public.reservas for update to authenticated
-  using (public.es_admin()) with check (public.es_admin());
-revoke update on public.reservas from authenticated;
-grant update (estado) on public.reservas to authenticated;   -- solo se puede cancelar
+<!-- PIZARRÓN -->
+<section class="view" id="v-pizarron">
+  <div class="hero" style="margin-top:-40px;margin-bottom:40px"><div class="wrap">
+    <img class="esp" src="espiral.png" alt="">
+    <div class="txt">
+      <h1>Lo que mueve a los grupos estudiantiles</h1>
+      <p>Noticias y eventos de cada grupo de la OGE, y el espacio listo para reservar.</p>
+      <a class="btn p" href="#reservar">Reservar el espacio</a><a class="btn s" href="#grupo">Publicar en el pizarrón</a>
+    </div>
+  </div></div>
+  <div class="wrap">
+    <h2>Pizarrón</h2>
+    <p class="sub">Publicado por los coordinadores de cada grupo.</p>
+    <div class="board">
+      <div class="chips" role="group" aria-label="Filtrar">
+        <button class="chip" data-f="todo" aria-pressed="true">Todo</button>
+        <button class="chip" data-f="evento" aria-pressed="false">Eventos</button>
+        <button class="chip" data-f="noticia" aria-pressed="false">Noticias</button>
+      </div>
+      <div class="notas" id="notas"></div>
+    </div>
+  </div>
+</section>
 
--- Agenda pública y reservas recientes (sin datos personales)
-drop function if exists public.horarios_ocupados(timestamptz, timestamptz);
-drop function if exists public.agenda(timestamptz, timestamptz);
-drop function if exists public.reservas_recientes();
-create function public.agenda(p_desde timestamptz, p_hasta timestamptz)
-returns table (grupo_nombre text, inicio timestamptz, fin timestamptz, motivo text)
-language sql security definer set search_path = public as $$
-  select r.grupo_nombre, r.inicio, r.fin, r.motivo from reservas r
-  where r.estado <> 'cancelada' and r.fin > p_desde and r.inicio < p_hasta
-  order by r.inicio;
-$$;
-create function public.reservas_recientes()
-returns table (grupo_nombre text, inicio timestamptz, fin timestamptz, creada_en timestamptz)
-language sql security definer set search_path = public as $$
-  select r.grupo_nombre, r.inicio, r.fin, r.creada_en from reservas r
-  where r.estado <> 'cancelada' and r.creada_en > now() - interval '14 days'
-  order by r.creada_en desc limit 10;
-$$;
-grant execute on function public.agenda(timestamptz, timestamptz) to anon, authenticated;
-grant execute on function public.reservas_recientes() to anon, authenticated;
+<!-- RESERVAR -->
+<section class="view" id="v-reservar"><div class="wrap">
+  <h2>Reservar el espacio de la OGE</h2>
+  <p class="sub">Elige el día para ver qué horarios ya están tomados.</p>
+  <p class="ahora" id="ahora"></p>
+  <div class="dos">
+    <div>
+      <div class="card" id="resCard">
+        <h3>Nueva reserva</h3>
+        <p class="sub" style="margin:0 0 8px">Se reserva con 24 horas de antelación y por máximo 2 horas.</p>
+        <div id="resAviso" class="aviso" hidden></div>
+        <div id="resForm">
+          <label for="rFecha">Día</label><input type="date" id="rFecha">
+          <div class="fila">
+            <div><label for="rIni">Hora de inicio</label><input type="time" id="rIni" step="900"></div>
+            <div><label for="rFin">Hora de fin</label><input type="time" id="rFin" step="900"></div>
+          </div>
+          <label for="rMotivo">Motivo</label><input type="text" id="rMotivo" maxlength="200" placeholder="Ensayo, reunión, taller…">
+          <label for="rResp">Responsable de la reserva</label><input type="text" id="rResp" maxlength="100">
+          <label for="rEnc">Estudiante encargado del espacio</label><input type="text" id="rEnc" maxlength="100">
+          <button class="btn az" id="rEnviar" style="margin-top:16px;width:100%">Reservar el espacio</button>
+          <div class="msg" id="rMsg" role="status"></div>
+        </div>
+      </div>
+      <div class="card" id="misRes" hidden><h3>Mis reservas próximas</h3><ul class="lista" id="misResL" style="margin-top:12px"></ul></div>
+    </div>
+    <div class="card"><h3>Agenda del día</h3><ul class="lista" id="agenda" style="margin-top:12px"></ul></div>
+  </div>
+</div></section>
 
--- ---------- 5. NOTIFICACIONES DE LA DIRECCIÓN ----------
-create table if not exists public.avisos (
-  id uuid primary key default gen_random_uuid(),
-  titulo text not null check (char_length(titulo) between 3 and 100),
-  cuerpo text not null check (char_length(cuerpo) between 3 and 400),
-  creada_en timestamptz not null default now()
-);
-alter table public.avisos enable row level security;
-drop policy if exists "ver avisos" on public.avisos;
-drop policy if exists "admin avisa" on public.avisos;
-drop policy if exists "admin borra avisos" on public.avisos;
-create policy "ver avisos" on public.avisos for select to anon, authenticated using (true);
-create policy "admin avisa" on public.avisos for insert to authenticated with check (public.es_admin());
-create policy "admin borra avisos" on public.avisos for delete to authenticated using (public.es_admin());
+<!-- GRUPO -->
+<section class="view" id="v-grupo"><div class="wrap">
+  <div id="authBox" style="max-width:480px;margin:0 auto">
+    <h2>Entrar con la cuenta del grupo</h2>
+    <p class="sub">Cada grupo estudiantil tiene su cuenta. La crea su coordinador.</p>
+    <div class="card">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tIn" aria-selected="true">Ingresar</button>
+        <button role="tab" id="tUp" aria-selected="false">Crear cuenta del grupo</button>
+      </div>
+      <div id="fIn">
+        <label for="lCorreo">Correo del grupo</label><input type="email" id="lCorreo" autocomplete="email">
+        <label for="lClave">Contraseña</label><input type="password" id="lClave" autocomplete="current-password">
+        <button class="btn az" id="bIn" style="margin-top:16px;width:100%">Ingresar</button>
+      </div>
+      <div id="fUp" hidden>
+        <label for="cNombre">Nombre del grupo estudiantil</label><input type="text" id="cNombre" maxlength="80">
+        <label for="cCoord">Nombre del coordinador</label><input type="text" id="cCoord" maxlength="100" autocomplete="name">
+        <label for="cTel">Teléfono del coordinador</label><input type="tel" id="cTel" maxlength="20" autocomplete="tel">
+        <label for="cCorreo">Correo del grupo</label><input type="email" id="cCorreo" autocomplete="email">
+        <label for="cClave">Contraseña (mínimo 8 caracteres)</label><input type="password" id="cClave" autocomplete="new-password">
+        <label style="display:flex;gap:8px;font-weight:400;align-items:flex-start"><input type="checkbox" id="cAcepta" style="width:20px;min-height:20px;margin-top:3px">
+          <span>Soy el coordinador y autorizo el tratamiento de mis datos para gestionar la cuenta (Ley 1581 de 2012).</span></label>
+        <button class="btn az" id="bUp" style="margin-top:16px;width:100%">Crear cuenta del grupo</button>
+      </div>
+      <div class="msg" id="aMsg" role="status"></div>
+    </div>
+  </div>
 
--- ---------- 6. ARCHIVOS (imágenes, GIF, audio; máximo 5 MB) ----------
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('medios', 'medios', true, 5242880, array[
-  'image/jpeg','image/png','image/gif','image/webp',
-  'audio/mpeg','audio/ogg','audio/wav','audio/mp4','audio/aac'])
-on conflict (id) do update set public = true, file_size_limit = excluded.file_size_limit,
-  allowed_mime_types = excluded.allowed_mime_types;
-drop policy if exists "subir medios" on storage.objects;
-drop policy if exists "borrar medios" on storage.objects;
-create policy "subir medios" on storage.objects for insert to authenticated
-  with check (bucket_id = 'medios' and (storage.foldername(name))[1] = auth.uid()::text and public.grupo_aprobado());
-create policy "borrar medios" on storage.objects for delete to authenticated
-  using (bucket_id = 'medios' and ((storage.foldername(name))[1] = auth.uid()::text or public.es_admin()));
+  <div id="grupoBox" hidden>
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
+      <div><h2 id="gNombre"></h2><p class="sub" id="gEstado"></p></div>
+      <button class="btn l" id="bSalir">Cerrar sesión</button>
+    </div>
+    <div class="card"><h3>Perfil del grupo</h3>
+      <p class="sub" style="margin:0 0 8px">Así te verán los demás en la pestaña Grupos.</p>
+      <label for="fCoord">Nombre del coordinador principal</label><input type="text" id="fCoord" maxlength="100" autocomplete="name">
+      <label for="fDesc">Descripción del grupo</label><textarea id="fDesc" maxlength="500"></textarea>
+      <label for="fRedes">Redes o contacto público (ej. @migrupo en Instagram)</label><input type="text" id="fRedes" maxlength="120">
+      <label for="fLogo">Logo del grupo (imagen, máximo 5 MB)</label>
+      <input type="file" id="fLogo" accept="image/jpeg,image/png,image/gif,image/webp">
+      <div id="fPrev" style="margin-top:10px;display:flex;gap:12px;align-items:center"></div>
+      <button class="btn az" id="fGuardar" style="margin-top:16px;width:100%">Guardar perfil</button>
+      <div class="msg" id="fMsg" role="status"></div></div>
+    <div class="dos">
+      <div class="card">
+        <h3>Publicar en el pizarrón</h3>
+        <label for="pTipo">Tipo</label>
+        <select id="pTipo"><option value="noticia">Noticia</option><option value="evento">Evento</option></select>
+        <div id="pFechaBox" hidden><label for="pFecha">Fecha del evento</label><input type="date" id="pFecha"></div>
+        <label for="pTitulo">Título</label><input type="text" id="pTitulo" maxlength="120">
+        <label for="pCuerpo">Texto (máximo 600 caracteres)</label><textarea id="pCuerpo" maxlength="600"></textarea>
+        <label for="pArchivo">Flyer, imagen, GIF o audio (opcional, máximo 5 MB)</label>
+        <input type="file" id="pArchivo" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/ogg,audio/wav,audio/mp4,audio/aac">
+        <div id="pPrev" style="margin-top:10px"></div>
+        <button class="btn az" id="pEnviar" style="margin-top:16px;width:100%">Publicar en el pizarrón</button>
+        <div class="msg" id="pMsg" role="status"></div>
+      </div>
+      <div class="card"><h3>Mis publicaciones</h3><ul class="lista" id="misPubs" style="margin-top:12px"></ul></div>
+    </div>
+  </div>
+</div></section>
 
--- ---------- 7. CHAT: conversaciones privadas y salas ----------
-create table if not exists public.salas (
-  id uuid primary key default gen_random_uuid(),
-  nombre text check (nombre is null or char_length(nombre) between 2 and 60),
-  tipo text not null check (tipo in ('directo','grupal')),
-  creada_por uuid references public.grupos(id) on delete set null,
-  creada_en timestamptz not null default now()
-);
-create table if not exists public.sala_miembros (
-  sala_id uuid not null references public.salas(id) on delete cascade,
-  grupo_id uuid not null references public.grupos(id) on delete cascade,
-  primary key (sala_id, grupo_id)
-);
-alter table public.salas enable row level security;
-alter table public.sala_miembros enable row level security;
+<section class="view" id="v-grupos"><div class="wrap">
+  <h2>Grupos estudiantiles</h2><p class="sub">Conoce a los grupos de la OGE y escríbeles.</p>
+  <div class="grid" id="gGrid"></div>
+</div></section>
 
-create or replace function public.es_miembro(p_sala uuid) returns boolean
-language sql stable security definer set search_path = public as $$
-  select exists (select 1 from sala_miembros where sala_id = p_sala and grupo_id = auth.uid());
-$$;
+<section class="view" id="v-chat"><div class="wrap">
+  <h2>Chat</h2><p class="sub">Escríbele a un grupo en privado o participa en las salas que crea la dirección.</p>
+  <div class="chatg">
+    <div class="card"><h3>Conversaciones</h3>
+      <label for="chatCon">Nueva conversación con</label>
+      <div style="display:flex;gap:8px"><select id="chatCon"></select><button class="btn az" id="chatNueva" style="min-height:44px">Abrir</button></div>
+      <ul class="lista" id="chatSalas" style="margin-top:14px"></ul></div>
+    <div class="card"><h3 id="chatTit">Elige una conversación</h3>
+      <div id="chatL" style="height:min(50vh,420px);overflow:auto;display:flex;flex-direction:column;gap:8px;margin-top:10px" role="log" aria-live="polite"></div>
+      <div style="display:flex;gap:8px;margin-top:12px"><input type="text" id="chatT" maxlength="500" placeholder="Escribe un mensaje" aria-label="Mensaje"><button class="btn az" id="chatE">Enviar</button></div>
+      <div class="msg" id="chatM" role="status"></div></div>
+  </div>
+</div></section>
 
-drop policy if exists "admin ve salas" on public.salas;
-drop policy if exists "admin borra salas" on public.salas;
-create policy "admin ve salas" on public.salas for select to authenticated using (public.es_admin());
-create policy "admin borra salas" on public.salas for delete to authenticated using (public.es_admin());
+<section class="view" id="v-admin"><div class="wrap">
+  <h2>Administración de la OGE</h2><p class="sub" id="aAhora"></p>
+  <div class="dos">
+    <div>
+      <div class="card"><h3>Espacio por día</h3><label for="aFecha">Día</label><input type="date" id="aFecha"><ul class="lista" id="aRes" style="margin-top:12px"></ul></div>
+      <div class="card"><h3>Enviar notificación a todos</h3>
+        <label for="avT">Título</label><input type="text" id="avT" maxlength="100">
+        <label for="avC">Mensaje</label><textarea id="avC" maxlength="400"></textarea>
+        <button class="btn az" id="avEnviar" style="margin-top:16px;width:100%">Enviar notificación</button>
+        <div class="msg" id="avMsg" role="status"></div><ul class="lista" id="aAvisos" style="margin-top:12px"></ul></div>
+      <div class="card"><h3>Salas de chat</h3><p class="sub" style="margin:0 0 8px">Crea una sala con todos los grupos aprobados.</p>
+        <label for="salaN">Nombre de la sala</label><input type="text" id="salaN" maxlength="60" placeholder="Anuncios generales">
+        <button class="btn az" id="salaC" style="margin-top:16px;width:100%">Crear sala con todos los grupos</button>
+        <div class="msg" id="salaM" role="status"></div><ul class="lista" id="aSalas" style="margin-top:12px"></ul></div>
+    </div>
+    <div>
+      <div class="card"><h3>Grupos estudiantiles</h3><ul class="lista" id="aGrupos" style="margin-top:12px"></ul></div>
+      <div class="card"><h3>Publicaciones recientes</h3><ul class="lista" id="aPubs" style="margin-top:12px"></ul></div>
+    </div>
+  </div>
+</div></section>
 
-create table if not exists public.mensajes (
-  id uuid primary key default gen_random_uuid(),
-  grupo_id uuid not null references public.grupos(id) on delete cascade,
-  sala_id uuid not null references public.salas(id) on delete cascade,
-  grupo_nombre text not null default '',
-  texto text not null check (char_length(texto) between 1 and 500),
-  creada_en timestamptz not null default now()
-);
-alter table public.mensajes add column if not exists sala_id uuid references public.salas(id) on delete cascade;
-delete from public.mensajes where sala_id is null;
-alter table public.mensajes alter column sala_id set not null;
-alter table public.mensajes enable row level security;
-drop trigger if exists nombre_mensaje on public.mensajes;
-create trigger nombre_mensaje before insert on public.mensajes
-  for each row execute function public.poner_nombre_grupo();
-drop policy if exists "leer chat" on public.mensajes;
-drop policy if exists "escribir chat" on public.mensajes;
-drop policy if exists "borrar chat" on public.mensajes;
-create policy "leer chat" on public.mensajes for select to authenticated
-  using (public.es_miembro(sala_id) and (public.grupo_aprobado() or public.es_admin()));
-create policy "escribir chat" on public.mensajes for insert to authenticated
-  with check (grupo_id = auth.uid() and public.es_miembro(sala_id) and (public.grupo_aprobado() or public.es_admin()));
-create policy "borrar chat" on public.mensajes for delete to authenticated
-  using (grupo_id = auth.uid() or public.es_admin());
+<footer><div class="wrap"><img src="logo.png" alt="OGE Organización de Grupos Estudiantiles"><span>Pizarrón y reservas de los grupos estudiantiles.</span></div></footer>
 
-drop function if exists public.directorio();
-drop function if exists public.mis_salas();
-drop function if exists public.iniciar_chat(uuid);
-drop function if exists public.crear_sala_grupal(text);
-drop function if exists public.sincronizar_sala(uuid);
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
+<script>
+// ====== CONFIGURA AQUÍ ======
+const SUPABASE_URL = "https://xbxnglthaasptuabevvi.supabase.co";
+const SUPABASE_KEY = "sb_publishable_yzto52-y7qg-nk2s8seX4g_UwaIqITH";
+// ============================
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const NORM = {"audio/x-m4a":"audio/mp4","audio/m4a":"audio/mp4","audio/x-wav":"audio/wav","audio/wave":"audio/wav","audio/x-aac":"audio/aac","audio/mp3":"audio/mpeg"};
+const tipoOk = f => NORM[f.type] || f.type;
+const pad = n => String(n).padStart(2, "0");
+const iso = (d, t) => new Date(`${d}T${t}:00-05:00`).toISOString();
+const hhmm = i => new Date(i).toLocaleTimeString("es-CO", {hour:"2-digit", minute:"2-digit", timeZone:"America/Bogota"});
+const dia = (d, o) => new Date(d + "T12:00:00").toLocaleDateString("es-CO", o);
+const say = (el, t, ok) => { el.textContent = t; el.className = "msg " + (ok ? "o" : "e"); };
+let user = null, grupo = null, filtro = "todo", notas = [], perfilId = null, logoNuevo = null, logoQuitar = false;
 
-create function public.directorio() returns table (id uuid, nombre text)
-language sql stable security definer set search_path = public as $$
-  select g.id, g.nombre from grupos g
-  where g.aprobado and g.id <> auth.uid() and public.grupo_aprobado()
-  order by g.nombre;
-$$;
+const b = new Date(new Date().toLocaleString("en-US", {timeZone:"America/Bogota"}));
+const hoy = `${b.getFullYear()}-${pad(b.getMonth()+1)}-${pad(b.getDate())}`;
+["#rFecha","#pFecha"].forEach(s => $(s).min = hoy);
+$("#rFecha").value = hoy;
 
-create function public.mis_salas() returns table (id uuid, titulo text, tipo text, ultima timestamptz)
-language sql stable security definer set search_path = public as $$
-  select s.id,
-    case when s.tipo = 'grupal' then s.nombre
-      else (select g.nombre from sala_miembros m2 join grupos g on g.id = m2.grupo_id
-            where m2.sala_id = s.id and m2.grupo_id <> auth.uid() limit 1) end,
-    s.tipo,
-    coalesce((select max(m.creada_en) from mensajes m where m.sala_id = s.id), s.creada_en)
-  from salas s join sala_miembros sm on sm.sala_id = s.id and sm.grupo_id = auth.uid()
-  order by 4 desc;
-$$;
+/* navegación */
+function ruta() {
+  const v = (location.hash || "#pizarron").slice(1);
+  const vista = ["pizarron","reservar","grupos","grupo","chat","admin"].includes(v) ? v : "pizarron";
+  $$(".view").forEach(s => s.classList.toggle("on", s.id === "v-" + vista));
+  $$("nav a").forEach(a => a.dataset.v === vista ? a.setAttribute("aria-current","page") : a.removeAttribute("aria-current"));
+  $("#panelNot").hidden = true;
+  clearInterval(chatT); if (vista === "grupos") cargarGrupos(); if (vista === "chat") { cargarSalas(); cargarMsgs(); chatT = setInterval(cargarMsgs, 6000); }
+}
+const pos = {}; let adelante = false, ultimoY = 0;
+addEventListener("scroll", () => { ultimoY = scrollY; }, { passive: true });
+document.addEventListener("click", e => { if (e.target.closest('a[href^="#"]')) adelante = true; });
+addEventListener("hashchange", e => {
+  pos[(e.oldURL ? new URL(e.oldURL).hash : "") || "#pizarron"] = ultimoY;
+  ruta();
+  scrollTo(0, adelante ? 0 : (pos[location.hash || "#pizarron"] || 0)); adelante = false;
+});
+/* al volver a la página desde otro sitio (botón atrás), refrescar los datos */
+addEventListener("pageshow", e => { if (e.persisted) { sesion(); cargarPizarron(); cargarAgenda(); cargarAhora(); cargarNot(); ruta(); } });
 
-create function public.iniciar_chat(p_otro uuid) returns uuid
-language plpgsql security definer set search_path = public as $$
-declare v uuid;
-begin
-  if not public.grupo_aprobado() then raise exception 'grupo no aprobado'; end if;
-  if p_otro = auth.uid() or not exists (select 1 from grupos where id = p_otro and aprobado) then
-    raise exception 'grupo no valido'; end if;
-  select s.id into v from salas s
-  where s.tipo = 'directo'
-    and exists (select 1 from sala_miembros where sala_id = s.id and grupo_id = auth.uid())
-    and exists (select 1 from sala_miembros where sala_id = s.id and grupo_id = p_otro)
-  limit 1;
-  if v is null then
-    insert into salas (tipo, creada_por) values ('directo', auth.uid()) returning id into v;
-    insert into sala_miembros (sala_id, grupo_id) values (v, auth.uid()), (v, p_otro);
-  end if;
-  return v;
-end $$;
+/* sesión */
+async function sesion() {
+  const { data } = await db.auth.getSession();
+  user = data.session?.user || null; grupo = null;
+  if (user) { const r = await db.from("grupos").select("*").eq("id", user.id).maybeSingle(); grupo = r.data; }
+  $("#navGrupo").textContent = grupo ? grupo.nombre : "Ingresar";
+  const adm = !!(grupo && grupo.es_admin); $("#navAdmin").hidden = !adm;
+  if (adm) cargarAdmin(); else $("#aAhora").textContent = "Acceso solo para la dirección de la OGE.";
+  $("#authBox").hidden = !!user; $("#grupoBox").hidden = !user;
+  if (user) {
+    $("#gNombre").textContent = grupo ? grupo.nombre : "Tu grupo";
+    $("#gEstado").textContent = !grupo ? "No encontramos los datos del grupo." : grupo.aprobado
+      ? "Cuenta aprobada por la OGE. Ya puedes publicar y reservar." : "Cuenta pendiente: la OGE debe aprobar tu grupo antes de publicar o reservar.";
+    cargarMisPubs();
+    if (grupo && perfilId !== user.id) { $("#fCoord").value = grupo.coordinador || ""; $("#fDesc").value = grupo.descripcion || ""; $("#fRedes").value = grupo.redes || ""; perfilId = user.id; prevLogo(); }
+  }
+  const ok = !!(grupo && grupo.aprobado), av = $("#resAviso");
+  $("#resForm").hidden = !ok; av.hidden = ok;
+  av.innerHTML = !user ? 'Para reservar, <a href="#grupo">ingresa con la cuenta de tu grupo</a>.' : "Tu grupo aún no está aprobado por la OGE.";
+  $("#pEnviar").disabled = !ok;
+  $("#misRes").hidden = !ok; if (ok) cargarMisRes();
+  $("#navChat").hidden = !ok; if (["#chat", "#grupos"].includes(location.hash)) ruta();
+}
+db.auth.onAuthStateChange(e => { if (e === "SIGNED_IN" || e === "SIGNED_OUT") setTimeout(sesion, 0); });
 
-create function public.crear_sala_grupal(p_nombre text) returns uuid
-language plpgsql security definer set search_path = public as $$
-declare v uuid;
-begin
-  if not public.es_admin() then raise exception 'solo la direccion'; end if;
-  insert into salas (nombre, tipo, creada_por) values (trim(p_nombre), 'grupal', auth.uid()) returning id into v;
-  insert into sala_miembros (sala_id, grupo_id) select v, id from grupos where aprobado;
-  return v;
-end $$;
+$("#tIn").onclick = () => tab(true); $("#tUp").onclick = () => tab(false);
+function tab(inn) {
+  $("#tIn").setAttribute("aria-selected", inn); $("#tUp").setAttribute("aria-selected", !inn);
+  $("#fIn").hidden = !inn; $("#fUp").hidden = inn; $("#aMsg").textContent = "";
+}
+$("#bIn").onclick = async () => {
+  say($("#aMsg"), "Ingresando…", true);
+  const { error } = await db.auth.signInWithPassword({ email: $("#lCorreo").value.trim(), password: $("#lClave").value });
+  if (error) { console.error(error); say($("#aMsg"), /confirm/i.test(error.message) ? "Falta confirmar el correo. Revisa tu bandeja o pide a la OGE que confirme la cuenta." : /invalid login/i.test(error.message) ? "Correo o contraseña incorrectos." : "No se pudo ingresar: " + error.message, false); } else $("#aMsg").textContent = "";
+};
+$("#bUp").onclick = async () => {
+  const m = $("#aMsg"), n = $("#cNombre").value.trim(), c = $("#cCoord").value.trim(), e = $("#cCorreo").value.trim(), p = $("#cClave").value;
+  if (n.length < 2 || c.length < 2 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return say(m, "Completa el nombre del grupo, el coordinador y un correo válido.", false);
+  if (p.length < 8) return say(m, "La contraseña debe tener mínimo 8 caracteres.", false);
+  if (!$("#cAcepta").checked) return say(m, "Debes autorizar el tratamiento de datos.", false);
+  say(m, "Creando cuenta…", true);
+  const { data, error } = await db.auth.signUp({ email: e, password: p, options: { data: { nombre: n, coordinador: c, telefono: $("#cTel").value.trim() } } });
+  if (error) { console.error(error); return say(m, /registered/i.test(error.message) ? "Ese correo ya tiene cuenta." : "No se pudo crear la cuenta: " + error.message, false); }
+  say(m, data.session ? "Tu correo se registró correctamente. La OGE debe aprobar tu grupo antes de que puedas publicar o reservar." : "Tu correo se registró correctamente. Te enviamos un mensaje: ábrelo y pulsa el botón para confirmar tu cuenta.", true);
+};
+$("#bSalir").onclick = async () => { await db.auth.signOut(); adelante = true; location.hash = "#pizarron"; };
 
-create function public.sincronizar_sala(p_sala uuid) returns void
-language plpgsql security definer set search_path = public as $$
-begin
-  if not public.es_admin() then raise exception 'solo la direccion'; end if;
-  insert into sala_miembros (sala_id, grupo_id) select p_sala, id from grupos where aprobado
-  on conflict do nothing;
-end $$;
+/* pizarrón */
+async function cargarPizarron() {
+  const { data, error } = await db.from("noticias").select("*").order("creada_en", { ascending: false }).limit(60);
+  if (error) { $("#notas").innerHTML = '<p class="vacio">No se pudo cargar el pizarrón. Recarga la página.</p>'; return; }
+  notas = data; pintar(); if (grupo && grupo.es_admin) adminPubs();
+}
+function pintar() {
+  const l = notas.filter(n => filtro === "todo" || n.tipo === filtro);
+  $("#notas").innerHTML = l.length ? l.map(n => `<article class="nota ${n.tipo}">
+    ${n.fecha_evento ? `<span class="fecha">${esc(dia(n.fecha_evento, {weekday:"short", day:"numeric", month:"short"}))}</span>` : ""}
+    ${n.media_url ? (n.media_tipo === "audio" ? `<audio controls preload="none" src="${esc(n.media_url)}"></audio>` : `<img loading="lazy" src="${esc(n.media_url)}" alt="Flyer de ${esc(n.titulo)}">`) : ""}
+    <h3>${esc(n.titulo)}</h3><p>${esc(n.cuerpo)}</p><div class="meta">${esc(n.grupo_nombre)}</div></article>`).join("")
+    : '<p class="vacio">Todavía no hay publicaciones. Los grupos pueden publicar desde su cuenta.</p>';
+}
+$$(".chip").forEach(c => c.onclick = () => { filtro = c.dataset.f; $$(".chip").forEach(x => x.setAttribute("aria-pressed", x === c)); pintar(); });
 
-revoke execute on function public.directorio(), public.mis_salas(), public.iniciar_chat(uuid),
-  public.crear_sala_grupal(text), public.sincronizar_sala(uuid) from public, anon;
-grant execute on function public.directorio(), public.mis_salas(), public.iniciar_chat(uuid),
-  public.crear_sala_grupal(text), public.sincronizar_sala(uuid) to authenticated;
+/* publicar */
+$("#pTipo").onchange = () => $("#pFechaBox").hidden = $("#pTipo").value !== "evento";
+$("#pEnviar").onclick = async () => {
+  const m = $("#pMsg"), t = $("#pTipo").value, titulo = $("#pTitulo").value.trim(), cuerpo = $("#pCuerpo").value.trim();
+  if (titulo.length < 3 || cuerpo.length < 3) return say(m, "Escribe un título y un texto.", false);
+  if (t === "evento" && !$("#pFecha").value) return say(m, "Indica la fecha del evento.", false);
+  const fl = $("#pArchivo").files[0]; let media_url = null, media_tipo = null;
+  if (fl) {
+    const ext = {"image/jpeg":"jpg","image/png":"png","image/gif":"gif","image/webp":"webp","audio/mpeg":"mp3","audio/ogg":"ogg","audio/wav":"wav","audio/mp4":"m4a","audio/aac":"aac"}[tipoOk(fl)];
+    if (!ext) return say(m, "Formato no permitido. Usa JPG, PNG, GIF, WEBP, MP3, OGG, WAV, M4A o AAC.", false);
+    if (fl.size > 5 * 1024 * 1024) return say(m, "El archivo pesa más de 5 MB.", false);
+    say(m, "Subiendo archivo…", true);
+    const ruta = `${user.id}/${Date.now()}.${ext}`;
+    const up = await db.storage.from("medios").upload(ruta, fl, { contentType: tipoOk(fl) });
+    if (up.error) return say(m, "No se pudo subir el archivo: " + up.error.message, false);
+    media_url = db.storage.from("medios").getPublicUrl(ruta).data.publicUrl; media_tipo = fl.type.startsWith("audio") ? "audio" : "imagen";
+  }
+  const { error } = await db.from("noticias").insert({ grupo_id: user.id, tipo: t, titulo, cuerpo, fecha_evento: t === "evento" ? $("#pFecha").value : null, media_url, media_tipo });
+  if (error) return say(m, "No se pudo publicar. Verifica que tu grupo esté aprobado.", false);
+  $("#pTitulo").value = $("#pCuerpo").value = $("#pArchivo").value = ""; $("#pPrev").innerHTML = ""; say(m, "Publicado en el pizarrón.", true);
+  cargarMisPubs(); cargarPizarron(); cargarNot();
+};
+async function cargarMisPubs() {
+  const { data } = await db.from("noticias").select("id,titulo,tipo,media_url").eq("grupo_id", user.id).order("creada_en", { ascending: false });
+  $("#misPubs").innerHTML = (data && data.length) ? data.map(n => `<li class="item"><div><b>${esc(n.titulo)}</b><small>${n.tipo === "evento" ? "Evento" : "Noticia"}</small></div><button class="btn l" data-del="${esc(n.id)}" data-url="${esc(n.media_url || "")}">Quitar</button></li>`).join("") : "<li>Aún no has publicado nada.</li>";
+  $$("[data-del]").forEach(x => x.onclick = () => quitarPub(x.dataset.del, x.dataset.url));
+}
 
--- ---------- 8. PERFIL DE GRUPO ----------
-drop function if exists public.perfiles();
-drop function if exists public.guardar_perfil(text, text, text);
-drop function if exists public.guardar_perfil(text, text, text, text);
+/* reservas */
+async function cargarAgenda() {
+  const d = $("#rFecha").value; if (!d) return;
+  const { data, error } = await db.rpc("agenda", { p_desde: iso(d, "00:00"), p_hasta: iso(d, "23:59") });
+  $("#agenda").innerHTML = error ? "<li>No se pudo cargar la agenda.</li>" : data.length
+    ? data.map(r => `<li class="item"><div><b>${esc(r.grupo_nombre)}</b><small>${esc(r.motivo)}</small></div><span class="hora">${hhmm(r.inicio)}–${hhmm(r.fin)}</span></li>`).join("")
+    : '<li class="libre">Todo el día está libre.</li>';
+}
+$("#rFecha").onchange = cargarAgenda;
+$("#rEnviar").onclick = async () => {
+  const m = $("#rMsg"), d = $("#rFecha").value, i = $("#rIni").value, f = $("#rFin").value;
+  const motivo = $("#rMotivo").value.trim(), resp = $("#rResp").value.trim(), enc = $("#rEnc").value.trim();
+  if (!d || !i || !f) return say(m, "Elige el día y las horas de inicio y fin.", false);
+  if (f <= i) return say(m, "La hora de fin debe ser después de la de inicio.", false);
+  if (new Date(iso(d, i)) < new Date(Date.now() + 24 * 3600e3)) return say(m, "Debes reservar con al menos un día de antelación.", false);
+  if (new Date(iso(d, f)) - new Date(iso(d, i)) > 2 * 3600e3) return say(m, "El máximo es de 2 horas por reserva.", false);
+  if (motivo.length < 3 || resp.length < 2 || enc.length < 2) return say(m, "Completa el motivo, el responsable y el estudiante encargado.", false);
+  say(m, "Guardando…", true);
+  const { error } = await db.from("reservas").insert({ grupo_id: user.id, inicio: iso(d, i), fin: iso(d, f), motivo, responsable: resp, encargado: enc });
+  if (error) { say(m, error.code === "23P01" ? "Ese horario se cruza con otra reserva. Mira la agenda y elige otro." : "No se pudo reservar. Revisa los datos e intenta de nuevo.", false); return cargarAgenda(); }
+  ["#rMotivo","#rResp","#rEnc"].forEach(s => $(s).value = ""); say(m, "Espacio reservado.", true);
+  cargarAgenda(); cargarMisRes(); cargarNot(); cargarAhora();
+};
+async function cargarMisRes() {
+  const { data } = await db.from("reservas").select("*").eq("grupo_id", user.id).eq("estado", "confirmada").gt("fin", new Date().toISOString()).order("inicio");
+  $("#misResL").innerHTML = (data && data.length) ? data.map(r => `<li class="item"><div><b>${esc(new Date(r.inicio).toLocaleDateString("es-CO", {weekday:"short", day:"numeric", month:"short", timeZone:"America/Bogota"}))} · ${hhmm(r.inicio)}–${hhmm(r.fin)}</b><small>${esc(r.motivo)} · Encargado: ${esc(r.encargado)}</small></div><button class="btn l" data-can="${esc(r.id)}">Cancelar</button></li>`).join("") : "<li>No tienes reservas próximas.</li>";
+  $$("[data-can]").forEach(x => x.onclick = async () => { await db.from("reservas").update({ estado: "cancelada" }).eq("id", x.dataset.can); cargarMisRes(); cargarAgenda(); });
+}
 
-create function public.guardar_perfil(p_descripcion text, p_redes text, p_logo text, p_coordinador text)
-returns void language plpgsql security definer set search_path = public as $$
-begin
-  if not public.grupo_aprobado() then raise exception 'grupo no aprobado'; end if;
-  if char_length(trim(coalesce(p_coordinador, ''))) < 2 then raise exception 'coordinador no valido'; end if;
-  if p_logo is not null
-     and p_logo not like ('%/storage/v1/object/public/medios/' || auth.uid()::text || '/%') then
-    raise exception 'logo no valido';
-  end if;
-  update grupos
-     set coordinador = trim(p_coordinador),
-         descripcion = nullif(trim(p_descripcion), ''),
-         redes = nullif(trim(p_redes), ''),
-         logo_url = p_logo
-   where id = auth.uid();
-end $$;
+/* quitar publicación (y su archivo) */
+async function quitarPub(id, url) {
+  await db.from("noticias").delete().eq("id", id);
+  if (url && url.includes("/medios/")) await db.storage.from("medios").remove([decodeURIComponent(url.split("/medios/")[1])]);
+  await cargarPizarron(); if (user) cargarMisPubs(); if (grupo && grupo.es_admin) adminPubs(); cargarNot();
+}
 
-create function public.perfiles()
-returns table (id uuid, nombre text, coordinador text, descripcion text, logo_url text, redes text)
-language sql stable security definer set search_path = public as $$
-  select g.id, g.nombre, g.coordinador, g.descripcion, g.logo_url, g.redes
-  from grupos g where g.aprobado and not g.es_admin order by g.nombre;
-$$;
+/* estado del espacio ahora */
+async function cargarAhora() {
+  const t = new Date(), { data } = await db.rpc("agenda", { p_desde: t.toISOString(), p_hasta: new Date(t.getTime() + 60000).toISOString() });
+  const r = data && data[0];
+  const txt = r ? `Ocupado ahora: ${r.grupo_nombre} (${hhmm(r.inicio)}–${hhmm(r.fin)}).` : "El espacio está libre ahora.";
+  $("#ahora").textContent = txt; if (grupo && grupo.es_admin) $("#aAhora").textContent = txt;
+}
 
-revoke execute on function public.guardar_perfil(text, text, text, text) from public, anon;
-grant execute on function public.guardar_perfil(text, text, text, text) to authenticated;
-grant execute on function public.perfiles() to anon, authenticated;
+/* notificaciones */
+function visto() { try { return localStorage.getItem("oge_visto") || 0; } catch { return 0; } }
+async function cargarNot() {
+  const [a, e, rv] = await Promise.all([
+    db.from("avisos").select("*").order("creada_en", { ascending: false }).limit(10),
+    db.from("noticias").select("titulo,grupo_nombre,creada_en,fecha_evento").eq("tipo", "evento").order("creada_en", { ascending: false }).limit(10),
+    db.rpc("reservas_recientes")]);
+  const l = [...(a.data || []).map(x => ({ t: x.titulo, d: x.cuerpo, f: x.creada_en })),
+    ...(rv.data || []).map(x => ({ t: "Espacio reservado: " + x.grupo_nombre, d: new Date(x.inicio).toLocaleDateString("es-CO", { day: "numeric", month: "short", timeZone: "America/Bogota" }) + " · " + hhmm(x.inicio) + "–" + hhmm(x.fin), f: x.creada_en })),
+    ...(e.data || []).map(x => ({ t: "Nuevo evento: " + x.titulo, d: x.grupo_nombre + (x.fecha_evento ? " · " + dia(x.fecha_evento, { day: "numeric", month: "short" }) : ""), f: x.creada_en }))]
+    .sort((p, q) => new Date(q.f) - new Date(p.f)).slice(0, 15);
+  $("#listaNot").innerHTML = l.length ? l.map(i => `<li class="item"><div><b>${esc(i.t)}</b><small>${esc(i.d)}</small></div></li>`).join("") : "<li>Sin notificaciones por ahora.</li>";
+  const n = l.filter(i => new Date(i.f) > new Date(visto())).length;
+  $("#nCamp").textContent = n; $("#nCamp").hidden = !n;
+}
+$("#bCamp").onclick = () => {
+  const abrir = $("#panelNot").hidden; $("#panelNot").hidden = !abrir; $("#bCamp").setAttribute("aria-expanded", abrir);
+  if (abrir) { try { localStorage.setItem("oge_visto", new Date().toISOString()); } catch {} $("#nCamp").hidden = true; }
+};
+addEventListener("keydown", e => { if (e.key === "Escape") { $("#panelNot").hidden = true; $("#bCamp").setAttribute("aria-expanded", "false"); } });
 
--- ---------- 9. ADMINISTRADOR: si la cuenta del director ya existe, la activa ----------
-update public.grupos g set es_admin = true, aprobado = true
-  from auth.users u where g.id = u.id and lower(u.email) = 'agarzon@uao.edu.co';
-update public.grupos g set es_admin = false
-  from auth.users u where g.id = u.id and lower(u.email) <> 'agarzon@uao.edu.co';
+/* administración */
+function adminPubs() {
+  $("#aPubs").innerHTML = notas.slice(0, 20).map(n => `<li class="item"><div><b>${esc(n.titulo)}</b><small>${esc(n.grupo_nombre)} · ${n.tipo}</small></div><button class="btn l" data-dp="${esc(n.id)}" data-url="${esc(n.media_url || "")}">Quitar</button></li>`).join("") || "<li>Sin publicaciones.</li>";
+  $$("[data-dp]").forEach(x => x.onclick = () => quitarPub(x.dataset.dp, x.dataset.url));
+}
+async function aRes() {
+  const d = $("#aFecha").value; if (!d) return;
+  const { data } = await db.from("reservas").select("*").eq("estado", "confirmada").gte("inicio", iso(d, "00:00")).lte("inicio", iso(d, "23:59")).order("inicio");
+  $("#aRes").innerHTML = (data && data.length) ? data.map(r => `<li class="item"><div><b>${hhmm(r.inicio)}–${hhmm(r.fin)} · ${esc(r.grupo_nombre)}</b><small>${esc(r.motivo)} · Responsable: ${esc(r.responsable)} · Encargado: ${esc(r.encargado)}</small></div><button class="btn l" data-ac="${esc(r.id)}">Cancelar</button></li>`).join("") : '<li class="libre">Sin reservas: el espacio está libre todo el día.</li>';
+  $$("[data-ac]").forEach(x => x.onclick = async () => { await db.from("reservas").update({ estado: "cancelada" }).eq("id", x.dataset.ac); aRes(); cargarAhora(); cargarAgenda(); });
+}
+async function cargarAdmin() {
+  cargarAhora(); aRes(); adminPubs();
+  const g = await db.from("grupos").select("*").order("creado_en", { ascending: false });
+  $("#aGrupos").innerHTML = (g.data || []).map(x => `<li class="item"><div><b>${esc(x.nombre)}${x.es_admin ? " (dirección)" : ""}</b><small>${esc(x.coordinador)} · ${esc(x.telefono || "sin teléfono")} · ${x.aprobado ? "Aprobado" : "Pendiente"}</small></div>${x.es_admin ? "" : `<button class="btn l" data-ap="${esc(x.id)}" data-est="${x.aprobado}">${x.aprobado ? "Quitar acceso" : "Aprobar"}</button>`}</li>`).join("") || "<li>Sin grupos.</li>";
+  $$("[data-ap]").forEach(x => x.onclick = async () => { await db.from("grupos").update({ aprobado: x.dataset.est !== "true" }).eq("id", x.dataset.ap); cargarAdmin(); });
+  const av = await db.from("avisos").select("*").order("creada_en", { ascending: false }).limit(10);
+  $("#aAvisos").innerHTML = (av.data || []).map(a => `<li class="item"><div><b>${esc(a.titulo)}</b><small>${esc(a.cuerpo)}</small></div><button class="btn l" data-dav="${esc(a.id)}">Quitar</button></li>`).join("");
+  $$("[data-dav]").forEach(x => x.onclick = async () => { await db.from("avisos").delete().eq("id", x.dataset.dav); cargarAdmin(); cargarNot(); });
+  const sl = await db.from("salas").select("*").eq("tipo", "grupal").order("creada_en", { ascending: false });
+  $("#aSalas").innerHTML = (sl.data || []).map(s => `<li class="item"><div><b>${esc(s.nombre)}</b></div><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn l" data-sin="${esc(s.id)}">Agregar grupos nuevos</button><button class="btn l" data-bs="${esc(s.id)}">Eliminar</button></div></li>`).join("");
+  $$("[data-sin]").forEach(x => x.onclick = async () => { await db.rpc("sincronizar_sala", { p_sala: x.dataset.sin }); say($("#salaM"), "Grupos actualizados en la sala.", true); });
+  $$("[data-bs]").forEach(x => x.onclick = async () => { await db.from("salas").delete().eq("id", x.dataset.bs); cargarAdmin(); });
+}
+$("#salaC").onclick = async () => {
+  const n = $("#salaN").value.trim(), m = $("#salaM");
+  if (n.length < 2) return say(m, "Escribe el nombre de la sala.", false);
+  const { error } = await db.rpc("crear_sala_grupal", { p_nombre: n });
+  if (error) return say(m, "No se pudo crear la sala.", false);
+  $("#salaN").value = ""; say(m, "Sala creada con todos los grupos aprobados.", true); cargarAdmin();
+};
+$("#aFecha").value = hoy; $("#aFecha").onchange = aRes;
+$("#avEnviar").onclick = async () => {
+  const t = $("#avT").value.trim(), c = $("#avC").value.trim(), m = $("#avMsg");
+  if (t.length < 3 || c.length < 3) return say(m, "Escribe un título y un mensaje.", false);
+  const { error } = await db.from("avisos").insert({ titulo: t, cuerpo: c });
+  if (error) return say(m, "No se pudo enviar la notificación.", false);
+  $("#avT").value = $("#avC").value = ""; say(m, "Notificación enviada.", true); cargarAdmin(); cargarNot();
+};
+
+/* chat */
+let chatT = null, sala = null;
+async function cargarSalas() {
+  if (!(grupo && grupo.aprobado)) { $("#chatSalas").innerHTML = "<li>Ingresa con un grupo aprobado para usar el chat.</li>"; return; }
+  const [s, d] = await Promise.all([db.rpc("mis_salas"), db.rpc("directorio")]);
+  $("#chatSalas").innerHTML = (s.data || []).map(x => `<li><button class="btn l" style="width:100%;justify-content:flex-start;text-align:left;${x.id === sala ? "border-color:var(--azul)" : ""}" data-sala="${esc(x.id)}" data-tit="${esc(x.titulo || "Conversación")}">${x.tipo === "grupal" ? "Sala · " : ""}${esc(x.titulo || "Conversación")}</button></li>`).join("") || "<li>Aún no tienes conversaciones. Abre una con un grupo.</li>";
+  $$("[data-sala]").forEach(b => b.onclick = () => abrirSala(b.dataset.sala, b.dataset.tit));
+  const sel = $("#chatCon"), prev = sel.value;
+  sel.innerHTML = (d.data || []).map(g => `<option value="${esc(g.id)}">${esc(g.nombre)}</option>`).join(""); if (prev) sel.value = prev;
+}
+function abrirSala(id, tit) { sala = id; $("#chatTit").textContent = tit; delete $("#chatL").dataset.ok; cargarMsgs(); cargarSalas(); }
+async function cargarMsgs() {
+  const l = $("#chatL"); if (!(grupo && grupo.aprobado) || !sala) return;
+  const { data } = await db.from("mensajes").select("*").eq("sala_id", sala).order("creada_en", { ascending: false }).limit(60);
+  const abajo = l.scrollHeight - l.scrollTop - l.clientHeight < 80;
+  l.innerHTML = (data || []).reverse().map(x => `<div class="m${x.grupo_id === user.id ? " yo" : ""}"><small>${esc(x.grupo_nombre)} · ${hhmm(x.creada_en)}</small>${esc(x.texto)}${grupo.es_admin ? ` <button class="btn l" data-dm="${esc(x.id)}" style="min-height:28px;padding:0 8px">Borrar</button>` : ""}</div>`).join("") || '<p class="sub">Aún no hay mensajes. Escribe el primero.</p>';
+  if (abajo || !l.dataset.ok) { l.scrollTop = l.scrollHeight; l.dataset.ok = 1; }
+  $$("[data-dm]").forEach(x => x.onclick = async () => { await db.from("mensajes").delete().eq("id", x.dataset.dm); cargarMsgs(); });
+}
+$("#chatNueva").onclick = async () => {
+  const otro = $("#chatCon").value; if (!otro) return say($("#chatM"), "No hay otros grupos aprobados todavía.", false);
+  const { data, error } = await db.rpc("iniciar_chat", { p_otro: otro });
+  if (error) return say($("#chatM"), "No se pudo abrir la conversación.", false);
+  $("#chatM").textContent = ""; await cargarSalas(); abrirSala(data, $("#chatCon").selectedOptions[0].textContent);
+};
+$("#chatE").onclick = async () => {
+  const t = $("#chatT").value.trim(); if (!t || !user) return;
+  if (!sala) return say($("#chatM"), "Elige una conversación primero.", false);
+  const { error } = await db.from("mensajes").insert({ grupo_id: user.id, sala_id: sala, texto: t });
+  if (error) return say($("#chatM"), "No se pudo enviar el mensaje.", false);
+  $("#chatT").value = ""; $("#chatM").textContent = ""; delete $("#chatL").dataset.ok; cargarMsgs(); cargarSalas();
+};
+$("#chatT").addEventListener("keydown", e => { if (e.key === "Enter") $("#chatE").click(); });
+
+/* vista previa del archivo del pizarrón */
+$("#pArchivo").onchange = () => {
+  const f = $("#pArchivo").files[0], p = $("#pPrev"); p.innerHTML = ""; if (!f) return;
+  const okT = /^(image\/(jpeg|png|gif|webp)|audio\/(mpeg|ogg|wav|mp4|aac))$/.test(tipoOk(f));
+  if (!okT || f.size > 5 * 1024 * 1024) { $("#pArchivo").value = ""; return say($("#pMsg"), !okT ? "Formato no permitido." : "El archivo pesa más de 5 MB.", false); }
+  $("#pMsg").textContent = "";
+  const u = URL.createObjectURL(f);
+  p.innerHTML = (f.type.startsWith("audio") ? `<audio controls src="${u}" style="width:100%"></audio>` : `<img src="${u}" alt="Vista previa" style="max-width:100%;max-height:220px;border-radius:8px">`)
+    + `<div style="margin-top:6px"><button class="btn l" type="button" id="pQuitar">Quitar archivo</button> <small>${esc(f.name)}</small></div>`;
+  $("#pQuitar").onclick = () => { $("#pArchivo").value = ""; p.innerHTML = ""; URL.revokeObjectURL(u); };
+};
+
+/* perfil del grupo */
+function prevLogo() {
+  const src = logoNuevo ? URL.createObjectURL(logoNuevo) : (!logoQuitar && grupo && grupo.logo_url);
+  $("#fPrev").innerHTML = src ? `<img class="logo-g" src="${esc(src)}" alt="Logo del grupo"><button class="btn l" type="button" id="fQuitar">Quitar logo</button>` : "";
+  if (src) $("#fQuitar").onclick = () => { logoNuevo = null; logoQuitar = true; $("#fLogo").value = ""; prevLogo(); };
+}
+$("#fLogo").onchange = () => {
+  const f = $("#fLogo").files[0]; if (!f) return;
+  if (!/^image\/(jpeg|png|gif|webp)$/.test(f.type) || f.size > 5 * 1024 * 1024) { $("#fLogo").value = ""; return say($("#fMsg"), "El logo debe ser JPG, PNG, GIF o WEBP de máximo 5 MB.", false); }
+  $("#fMsg").textContent = ""; logoNuevo = f; logoQuitar = false; prevLogo();
+};
+$("#fGuardar").onclick = async () => {
+  const m = $("#fMsg"); if ($("#fCoord").value.trim().length < 2) return say(m, "Escribe el nombre del coordinador principal.", false);
+  let logo = logoQuitar ? null : (grupo.logo_url || null);
+  if (logoNuevo) {
+    say(m, "Subiendo logo…", true);
+    const ext = {"image/jpeg":"jpg","image/png":"png","image/gif":"gif","image/webp":"webp"}[logoNuevo.type], ruta = `${user.id}/logo-${Date.now()}.${ext}`;
+    const up = await db.storage.from("medios").upload(ruta, logoNuevo, { contentType: logoNuevo.type });
+    if (up.error) return say(m, "No se pudo subir el logo: " + up.error.message, false);
+    logo = db.storage.from("medios").getPublicUrl(ruta).data.publicUrl;
+  }
+  const { error } = await db.rpc("guardar_perfil", { p_descripcion: $("#fDesc").value, p_redes: $("#fRedes").value, p_logo: logo, p_coordinador: $("#fCoord").value });
+  if (error) return say(m, "No se pudo guardar el perfil. Verifica que tu grupo esté aprobado.", false);
+  const viejo = grupo.logo_url;
+  if (viejo && viejo !== logo && viejo.includes("/medios/")) await db.storage.from("medios").remove([decodeURIComponent(viejo.split("/medios/")[1])]);
+  logoNuevo = null; logoQuitar = false; $("#fLogo").value = ""; perfilId = null; await sesion(); say(m, "Perfil guardado.", true);
+};
+
+/* directorio de grupos */
+async function cargarGrupos() {
+  const { data, error } = await db.rpc("perfiles");
+  $("#gGrid").innerHTML = error ? "<p>No se pudieron cargar los grupos.</p>" : (data || []).map(g => `<article class="card" style="margin:0">
+    <div style="display:flex;gap:12px;align-items:center">${g.logo_url ? `<img class="logo-g" loading="lazy" src="${esc(g.logo_url)}" alt="Logo de ${esc(g.nombre)}">` : `<div class="logo-g ini" aria-hidden="true">${esc(g.nombre.charAt(0).toUpperCase())}</div>`}<h3 style="margin:0">${esc(g.nombre)}</h3></div>
+    <p class="meta" style="margin:10px 0 0;padding:0">Coordinador: ${esc(g.coordinador)}</p>
+    <p style="margin:8px 0 0;white-space:pre-line;overflow-wrap:anywhere">${esc(g.descripcion || "Este grupo aún no ha escrito su descripción.")}</p>
+    ${g.redes ? `<p class="meta">${esc(g.redes)}</p>` : ""}
+    ${grupo && grupo.aprobado && g.id !== user.id ? `<button class="btn l" style="margin-top:12px" data-esc="${esc(g.id)}" data-nom="${esc(g.nombre)}">Escribir al grupo</button>` : ""}</article>`).join("") || "<p>Aún no hay grupos aprobados.</p>";
+  $$("[data-esc]").forEach(b => b.onclick = async () => {
+    const r = await db.rpc("iniciar_chat", { p_otro: b.dataset.esc }); if (r.error) return;
+    sala = r.data; $("#chatTit").textContent = b.dataset.nom; delete $("#chatL").dataset.ok; adelante = true; location.hash = "#chat";
+  });
+}
+
+ruta(); cargarPizarron(); cargarAgenda(); cargarAhora(); cargarNot(); sesion();
+</script>
+</body>
+</html>
